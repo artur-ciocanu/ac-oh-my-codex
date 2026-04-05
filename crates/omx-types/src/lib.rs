@@ -268,6 +268,18 @@ pub enum OmxError {
 
     #[error("JSON error: {0}")]
     Json(#[from] serde_json::Error),
+
+    #[error("mode error: {0}")]
+    Mode(String),
+
+    #[error("session error: {0}")]
+    Session(String),
+
+    #[error("agent error: {0}")]
+    Agent(String),
+
+    #[error("catalog error: {0}")]
+    Catalog(String),
 }
 
 // ---------------------------------------------------------------------------
@@ -382,5 +394,29 @@ mod tests {
         assert!(msg.contains("failed"), "should contain event name");
         assert!(msg.contains("omx-team"), "should contain source component");
         assert!(!msg.contains("worker:"), "should not contain worker label when None");
+    }
+
+    #[test]
+    fn mode_error_display() {
+        let err = OmxError::Mode("conflict".into());
+        assert_eq!(err.to_string(), "mode error: conflict");
+    }
+
+    #[test]
+    fn session_error_display() {
+        let err = OmxError::Session("not found".into());
+        assert_eq!(err.to_string(), "session error: not found");
+    }
+
+    #[test]
+    fn agent_error_display() {
+        let err = OmxError::Agent("duplicate name".into());
+        assert_eq!(err.to_string(), "agent error: duplicate name");
+    }
+
+    #[test]
+    fn catalog_error_display() {
+        let err = OmxError::Catalog("missing field".into());
+        assert_eq!(err.to_string(), "catalog error: missing field");
     }
 }
