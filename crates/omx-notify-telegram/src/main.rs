@@ -82,6 +82,9 @@ async fn send_telegram_notification(event: &HookEvent) -> (bool, String, String)
 mod tests {
     use super::*;
     use omx_types::{HookEventName, HookSource};
+    use std::sync::Mutex;
+
+    static ENV_MUTEX: Mutex<()> = Mutex::new(());
 
     fn test_event() -> HookEvent {
         HookEvent {
@@ -99,6 +102,7 @@ mod tests {
 
     #[tokio::test]
     async fn returns_error_when_bot_token_missing() {
+        let _guard = ENV_MUTEX.lock().unwrap();
         std::env::remove_var("OMX_TELEGRAM_BOT_TOKEN");
         std::env::remove_var("OMX_TELEGRAM_CHAT_ID");
         let (success, _, stderr) = send_telegram_notification(&test_event()).await;
@@ -108,6 +112,7 @@ mod tests {
 
     #[tokio::test]
     async fn returns_error_when_chat_id_missing() {
+        let _guard = ENV_MUTEX.lock().unwrap();
         std::env::set_var("OMX_TELEGRAM_BOT_TOKEN", "fake-token");
         std::env::remove_var("OMX_TELEGRAM_CHAT_ID");
         let (success, _, stderr) = send_telegram_notification(&test_event()).await;
@@ -117,6 +122,7 @@ mod tests {
 
     #[tokio::test]
     async fn returns_error_for_unreachable_url() {
+        let _guard = ENV_MUTEX.lock().unwrap();
         std::env::set_var("OMX_TELEGRAM_BOT_TOKEN", "fake-token");
         std::env::set_var("OMX_TELEGRAM_CHAT_ID", "12345");
         let (success, _, stderr) = send_telegram_notification(&test_event()).await;
