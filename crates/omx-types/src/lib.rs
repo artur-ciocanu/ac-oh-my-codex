@@ -215,6 +215,33 @@ pub struct HookSource {
     pub worker_id: Option<String>,
 }
 
+/// Format a HookEvent into a human-readable notification message.
+/// Used by all notification hooks (Discord, Slack, Telegram).
+pub fn format_hook_message(event: &HookEvent) -> String {
+    let mut parts = vec![
+        format!("**[OMX]** `{}`", event.event),
+        format!("Source: `{}`", event.source.component),
+    ];
+
+    if let Some(ref wid) = event.source.worker_id {
+        parts.push(format!("Worker: `{wid}`"));
+    }
+
+    if let Some(ref sid) = event.session_id {
+        parts.push(format!("Session: `{sid}`"));
+    }
+
+    if event.context != serde_json::json!({}) {
+        if let Ok(ctx) = serde_json::to_string_pretty(&event.context) {
+            parts.push(format!("Context:\n```json\n{ctx}\n```"));
+        }
+    }
+
+    parts.push(format!("Time: {}", event.timestamp));
+
+    parts.join("\n")
+}
+
 // ---------------------------------------------------------------------------
 // Unified error type
 // ---------------------------------------------------------------------------
@@ -314,5 +341,46 @@ mod tests {
         assert_eq!(DispatchStatus::Delivered.to_string(), "delivered");
         assert_eq!(TeamPhase::Verify.to_string(), "verify");
         assert_eq!(HookEventName::SessionStart.to_string(), "session_start");
+    }
+
+    #[test]
+    fn format_hook_message_includes_event_and_source() {
+        let event = HookEvent {
+            schema_version: "1".into(),
+            event: HookEventName::SessionStart,
+            timestamp: "2026-04-05T10:00:00Z".into(),
+            source: HookSource {
+                component: "omx-cli".into(),
+                worker_id: Some("w-001".into()),
+            },
+            context: serde_json::json!({"task": "build frontend"}),
+            session_id: Some("sess-abc".into()),
+        };
+
+        let msg = format_hook_message(&event);
+        assert!(msg.contains("session_start"), "should contain event name");
+        assert!(msg.contains("omx-cli"), "should contain source component");
+        assert!(msg.contains("w-001"), "should contain worker id");
+        assert!(msg.contains("sess-abc"), "should contain session id");
+    }
+
+    #[test]
+    fn format_hook_message_handles_missing_optional_fields() {
+        let event = HookEvent {
+            schema_version: "1".into(),
+            event: HookEventName::Failed,
+            timestamp: "2026-04-05T10:00:00Z".into(),
+            source: HookSource {
+                component: "omx-team".into(),
+                worker_id: None,
+            },
+            context: serde_json::json!({}),
+            session_id: None,
+        };
+
+        let msg = format_hook_message(&event);
+        assert!(msg.contains("failed"), "should contain event name");
+        assert!(msg.contains("omx-team"), "should contain source component");
+        assert!(!msg.contains("worker:"), "should not contain worker label when None");
     }
 }
