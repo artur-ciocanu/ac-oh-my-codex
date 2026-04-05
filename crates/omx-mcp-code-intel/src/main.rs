@@ -14,6 +14,20 @@ pub struct AstPatternSearchParams {
     pub workspace_root: Option<String>,
 }
 
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct AstGrepReplaceParams {
+    /// ast-grep pattern to match
+    pub pattern: String,
+    /// Replacement pattern
+    pub replacement: String,
+    /// Language: ts, js, rust, py, go, java, c, cpp
+    pub language: String,
+    /// Workspace root (default: ".")
+    pub workspace_root: Option<String>,
+    /// Dry run — show changes without applying (default: true)
+    pub dry_run: Option<bool>,
+}
+
 #[derive(Debug, Clone)]
 struct CodeIntelMcpServer;
 
@@ -134,6 +148,53 @@ impl CodeIntelMcpServer {
             format!("No matches found for pattern: {}", params.pattern)
         } else {
             serde_json::to_string_pretty(&results).unwrap_or_default()
+        }
+    }
+
+    #[tool(description = "Structural search and replace using ast-grep")]
+    async fn ast_grep_replace(&self, #[tool(aggr)] params: AstGrepReplaceParams) -> String {
+        let workspace = params.workspace_root.as_deref().unwrap_or(".");
+        let dry_run = params.dry_run.unwrap_or(true);
+
+        let mut cmd = tokio::process::Command::new("sg");
+
+        if dry_run {
+            cmd.arg("scan");
+        } else {
+            cmd.arg("scan").arg("--rewrite").arg(&params.replacement);
+        }
+
+        cmd.arg("--pattern").arg(&params.pattern);
+        cmd.arg("--lang").arg(&params.language);
+        cmd.arg("--json");
+        cmd.current_dir(workspace);
+
+        let output = match cmd.output().await {
+            Ok(output) => output,
+            Err(e) => {
+                return format!(
+                    "Failed to run ast-grep (sg): {e}. Install via: cargo install ast-grep"
+                );
+            }
+        };
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+
+        if stdout.trim().is_empty() {
+            if !stderr.trim().is_empty() {
+                return format!("ast-grep error: {stderr}");
+            }
+            return format!(
+                "No matches found for pattern: {} (lang: {})",
+                params.pattern, params.language
+            );
+        }
+
+        if dry_run {
+            format!("Dry run results:\n{stdout}")
+        } else {
+            format!("Applied replacements:\n{stdout}")
         }
     }
 }
