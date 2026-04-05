@@ -1,4 +1,4 @@
-use omx_types::HookEvent;
+use omx_types::{format_hook_message, HookEvent};
 use std::io::{self, Read};
 
 #[tokio::main]
@@ -6,17 +6,88 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut input = String::new();
     io::stdin().read_to_string(&mut input)?;
 
-    let _event: HookEvent = serde_json::from_str(&input)?;
+    let event: HookEvent = serde_json::from_str(&input)?;
+    let (success, stdout, stderr) = send_slack_notification(&event).await;
 
-    // Phase 5: send Slack webhook notification
     let result = serde_json::json!({
         "hook": "omx-notify-slack",
-        "success": false,
-        "stdout": "",
-        "stderr": "not implemented",
+        "success": success,
+        "stdout": stdout,
+        "stderr": stderr,
         "duration_ms": 0
     });
 
     println!("{}", serde_json::to_string(&result)?);
     Ok(())
+}
+
+async fn send_slack_notification(event: &HookEvent) -> (bool, String, String) {
+    let webhook_url = match std::env::var("OMX_SLACK_WEBHOOK_URL") {
+        Ok(url) => url,
+        Err(_) => {
+            return (
+                false,
+                String::new(),
+                "OMX_SLACK_WEBHOOK_URL not set".into(),
+            )
+        }
+    };
+
+    let message = format_hook_message(event);
+    let client = reqwest::Client::new();
+    let payload = serde_json::json!({ "text": message });
+
+    match client.post(&webhook_url).json(&payload).send().await {
+        Ok(resp) => {
+            let status = resp.status();
+            if status.is_success() {
+                (true, format!("Slack: {status}"), String::new())
+            } else {
+                let body = resp.text().await.unwrap_or_default();
+                (false, String::new(), format!("Slack API error {status}: {body}"))
+            }
+        }
+        Err(e) => (false, String::new(), format!("Slack request failed: {e}")),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use omx_types::{HookEventName, HookSource};
+    use std::sync::Mutex;
+
+    static ENV_MUTEX: Mutex<()> = Mutex::new(());
+
+    fn test_event() -> HookEvent {
+        HookEvent {
+            schema_version: "1".into(),
+            event: HookEventName::TurnComplete,
+            timestamp: "2026-04-05T10:00:00Z".into(),
+            source: HookSource {
+                component: "test".into(),
+                worker_id: Some("w-002".into()),
+            },
+            context: serde_json::json!({"task": "deploy"}),
+            session_id: Some("sess-456".into()),
+        }
+    }
+
+    #[tokio::test]
+    async fn returns_error_when_env_var_missing() {
+        let _guard = ENV_MUTEX.lock().unwrap();
+        std::env::remove_var("OMX_SLACK_WEBHOOK_URL");
+        let (success, _, stderr) = send_slack_notification(&test_event()).await;
+        assert!(!success);
+        assert!(stderr.contains("OMX_SLACK_WEBHOOK_URL not set"));
+    }
+
+    #[tokio::test]
+    async fn returns_error_for_unreachable_url() {
+        let _guard = ENV_MUTEX.lock().unwrap();
+        std::env::set_var("OMX_SLACK_WEBHOOK_URL", "http://127.0.0.1:1/fake");
+        let (success, _, stderr) = send_slack_notification(&test_event()).await;
+        assert!(!success);
+        assert!(stderr.contains("request failed"));
+    }
 }
