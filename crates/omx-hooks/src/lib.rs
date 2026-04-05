@@ -178,7 +178,7 @@ async fn run_hook(
     event_json: &str,
     timeout_ms: u64,
 ) -> Result<(String, String), String> {
-    use tokio::io::AsyncWriteExt;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::process::Command;
 
     let mut child = Command::new(path)
@@ -188,31 +188,56 @@ async fn run_hook(
         .spawn()
         .map_err(|e| format!("failed to spawn {}: {e}", path.display()))?;
 
+    // Write event JSON to stdin in a background task
     if let Some(mut stdin) = child.stdin.take() {
-        let json = event_json.to_string();
+        let payload = event_json.to_string();
         tokio::spawn(async move {
-            let _ = stdin.write_all(json.as_bytes()).await;
+            let _ = stdin.write_all(payload.as_bytes()).await;
             let _ = stdin.shutdown().await;
         });
     }
 
+    // Take stdout/stderr handles for reading in background tasks
+    let mut stdout_handle = child.stdout.take();
+    let mut stderr_handle = child.stderr.take();
+
+    let stdout_task = tokio::spawn(async move {
+        let mut buf = Vec::new();
+        if let Some(ref mut r) = stdout_handle {
+            let _ = r.read_to_end(&mut buf).await;
+        }
+        String::from_utf8_lossy(&buf).to_string()
+    });
+
+    let stderr_task = tokio::spawn(async move {
+        let mut buf = Vec::new();
+        if let Some(ref mut r) = stderr_handle {
+            let _ = r.read_to_end(&mut buf).await;
+        }
+        String::from_utf8_lossy(&buf).to_string()
+    });
+
+    // Wait for the child with timeout; child.wait() borrows &mut so select! works
     let timeout = tokio::time::Duration::from_millis(timeout_ms);
-    match tokio::time::timeout(timeout, child.wait_with_output()).await {
-        Ok(Ok(output)) => {
-            let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-            let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-            if output.status.success() {
+    tokio::select! {
+        status = child.wait() => {
+            let status = status.map_err(|e| format!("failed to wait for hook: {e}"))?;
+            let stdout = stdout_task.await.unwrap_or_default();
+            let stderr = stderr_task.await.unwrap_or_default();
+            if status.success() {
                 Ok((stdout, stderr))
             } else {
                 Err(format!(
                     "hook exited with status {}: {}",
-                    output.status,
+                    status,
                     stderr.trim()
                 ))
             }
         }
-        Ok(Err(e)) => Err(format!("failed to wait for hook: {e}")),
-        Err(_) => Err(format!("hook timed out after {timeout_ms}ms")),
+        _ = tokio::time::sleep(timeout) => {
+            let _ = child.start_kill();
+            Err(format!("hook timed out after {timeout_ms}ms"))
+        }
     }
 }
 
