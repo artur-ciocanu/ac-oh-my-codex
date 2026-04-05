@@ -170,6 +170,26 @@ impl TmuxAdapter {
         run_tmux(&["detach-client", "-t", &handle])?;
         Ok(MuxOutcome::Detached { handle })
     }
+
+    fn do_create_window(&self, session: &str, name: &str) -> Result<MuxOutcome, MuxError> {
+        let output = run_tmux(&["new-window", "-t", session, "-n", name, "-P", "-F", "#{session_name}:#{window_index}"])?;
+        let handle = output.trim().to_string();
+        Ok(MuxOutcome::WindowCreated { handle })
+    }
+
+    fn do_kill_window(&self, target: &str) -> Result<MuxOutcome, MuxError> {
+        run_tmux(&["kill-window", "-t", target])?;
+        Ok(MuxOutcome::WindowKilled {
+            handle: target.to_string(),
+        })
+    }
+
+    fn do_send_keys(&self, target: &str, keys: &str) -> Result<MuxOutcome, MuxError> {
+        run_tmux(&["send-keys", "-t", target, keys])?;
+        Ok(MuxOutcome::KeysSent {
+            target: target.to_string(),
+        })
+    }
 }
 
 impl MuxAdapter for TmuxAdapter {
@@ -188,6 +208,9 @@ impl MuxAdapter for TmuxAdapter {
             MuxOperation::InspectLiveness { target } => self.do_inspect_liveness(target),
             MuxOperation::Attach { target } => self.do_attach(target),
             MuxOperation::Detach { target } => self.do_detach(target),
+            MuxOperation::CreateWindow { session, name } => self.do_create_window(session, name),
+            MuxOperation::KillWindow { target } => self.do_kill_window(target),
+            MuxOperation::SendKeys { target, keys } => self.do_send_keys(target, keys),
         }
     }
 }
