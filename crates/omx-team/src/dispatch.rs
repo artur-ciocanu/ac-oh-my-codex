@@ -31,6 +31,12 @@ pub struct DispatchQueue {
     pending: Vec<DispatchRequest>,
 }
 
+impl Default for DispatchQueue {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl DispatchQueue {
     pub fn new() -> Self {
         Self {

@@ -50,7 +50,7 @@ pub fn read_ledger(ledger_path: &Path) -> Result<Vec<CommitRecord>, OmxError> {
     let records: Vec<CommitRecord> = data
         .lines()
         .filter(|line| !line.is_empty())
-        .map(|line| serde_json::from_str(line))
+        .map(serde_json::from_str)
         .collect::<Result<Vec<_>, _>>()?;
 
     Ok(records)
