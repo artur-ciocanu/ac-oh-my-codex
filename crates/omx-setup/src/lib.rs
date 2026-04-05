@@ -105,8 +105,43 @@ impl SetupGenerator for DefaultSetupGenerator {
         Ok(files)
     }
 
-    fn sync_mcp_servers(&self, _config: &OmxConfig, _scope: SetupScope) -> Result<(), OmxError> {
-        todo!("Phase 4: register Rust MCP server binaries in config.toml")
+    fn sync_mcp_servers(&self, config: &OmxConfig, scope: SetupScope) -> Result<(), OmxError> {
+        let config_path = match scope {
+            SetupScope::User => config.codex_home.join("config.toml"),
+            SetupScope::Project => std::env::current_dir()
+                .map_err(OmxError::Io)?
+                .join(".omx")
+                .join("config.toml"),
+        };
+
+        let omx_section = self.generate_config_toml(config, scope)?;
+
+        let existing = if config_path.exists() {
+            std::fs::read_to_string(&config_path).map_err(OmxError::Io)?
+        } else {
+            String::new()
+        };
+
+        let new_content = if existing.contains("# OMX:START") && existing.contains("# OMX:END") {
+            let start = existing.find("# OMX:START").unwrap();
+            let end = existing.find("# OMX:END").unwrap() + "# OMX:END".len();
+            let end = if existing[end..].starts_with('\n') {
+                end + 1
+            } else {
+                end
+            };
+            format!("{}{}{}", &existing[..start], omx_section, &existing[end..])
+        } else if existing.is_empty() {
+            omx_section
+        } else {
+            format!("{}\n{}", existing.trim_end(), omx_section)
+        };
+
+        if let Some(parent) = config_path.parent() {
+            std::fs::create_dir_all(parent).map_err(OmxError::Io)?;
+        }
+        std::fs::write(&config_path, new_content).map_err(OmxError::Io)?;
+        Ok(())
     }
 
     fn copy_prompts(&self, _scope: SetupScope) -> Result<(), OmxError> {
@@ -161,6 +196,54 @@ mod tests {
             result.contains("command = \"omx-mcp-state\""),
             "must use binary name"
         );
+    }
+
+    #[test]
+    fn sync_mcp_servers_writes_config_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut config = OmxConfig::default();
+        config.codex_home = dir.path().to_path_buf();
+
+        let gen = DefaultSetupGenerator;
+        gen.sync_mcp_servers(&config, SetupScope::User).unwrap();
+
+        let config_path = dir.path().join("config.toml");
+        assert!(config_path.exists(), "config.toml must be created");
+        let contents = std::fs::read_to_string(&config_path).unwrap();
+        assert!(contents.contains("# OMX:START"));
+        assert!(contents.contains("[mcp_servers.omx_state]"));
+    }
+
+    #[test]
+    fn sync_mcp_servers_preserves_user_content() {
+        let dir = tempfile::tempdir().unwrap();
+        let config_path = dir.path().join("config.toml");
+        std::fs::write(
+            &config_path,
+            "# My custom setting\nmy_key = \"my_value\"\n\n# OMX:START\nold stuff\n# OMX:END\n\n# More custom\n",
+        )
+        .unwrap();
+
+        let mut config = OmxConfig::default();
+        config.codex_home = dir.path().to_path_buf();
+
+        let gen = DefaultSetupGenerator;
+        gen.sync_mcp_servers(&config, SetupScope::User).unwrap();
+
+        let contents = std::fs::read_to_string(&config_path).unwrap();
+        assert!(
+            contents.contains("my_key = \"my_value\""),
+            "user content preserved before markers"
+        );
+        assert!(
+            contents.contains("# More custom"),
+            "user content preserved after markers"
+        );
+        assert!(
+            contents.contains("[mcp_servers.omx_state]"),
+            "new OMX content injected"
+        );
+        assert!(!contents.contains("old stuff"), "old OMX content replaced");
     }
 
     #[test]
