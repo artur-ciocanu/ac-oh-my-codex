@@ -34,7 +34,7 @@ impl Mode {
         Mode::Ralplan,
     ];
 
-    pub fn from_str(s: &str) -> Option<Self> {
+    pub fn parse_name(s: &str) -> Option<Self> {
         match s.trim().to_lowercase().as_str() {
             "autopilot" => Some(Self::Autopilot),
             "autoresearch" => Some(Self::Autoresearch),
@@ -201,12 +201,12 @@ mod tests {
     }
 
     #[test]
-    fn mode_from_str_parses_known_modes() {
-        assert_eq!(Mode::from_str("autopilot"), Some(Mode::Autopilot));
-        assert_eq!(Mode::from_str("Ralph"), Some(Mode::Ralph));
-        assert_eq!(Mode::from_str("deep-interview"), Some(Mode::DeepInterview));
-        assert_eq!(Mode::from_str("deep_interview"), Some(Mode::DeepInterview));
-        assert_eq!(Mode::from_str("unknown"), None);
+    fn mode_parse_name_parses_known_modes() {
+        assert_eq!(Mode::parse_name("autopilot"), Some(Mode::Autopilot));
+        assert_eq!(Mode::parse_name("Ralph"), Some(Mode::Ralph));
+        assert_eq!(Mode::parse_name("deep-interview"), Some(Mode::DeepInterview));
+        assert_eq!(Mode::parse_name("deep_interview"), Some(Mode::DeepInterview));
+        assert_eq!(Mode::parse_name("unknown"), None);
     }
 
     #[test]
