@@ -21,3 +21,4 @@ rmcp = { workspace = true }
 schemars = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
+dirs = { workspace = true }
