@@ -1102,7 +1102,6 @@ dependencies = [
  "omx-config",
  "omx-hooks",
  "omx-hud",
- "omx-mux",
  "omx-setup",
  "omx-state",
  "omx-team",

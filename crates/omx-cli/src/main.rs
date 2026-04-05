@@ -484,6 +484,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         },
         Some(Commands::HookApi { action }) => match action {
             HookApiAction::TmuxSendKeys { target, text } => {
+                if !target.starts_with("omx-") && !target.contains("omx-") {
+                    eprintln!("Warning: target '{target}' does not appear to be an OMX-managed session");
+                }
                 let output = std::process::Command::new("tmux")
                     .args(["send-keys", "-t", &target, &text, "Enter"])
                     .output()
@@ -494,6 +497,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
             HookApiAction::StateRead { mode, key } => {
+                if mode.contains("..") || mode.contains('/') || mode.contains('\\')
+                    || key.contains("..") || key.contains('/') || key.contains('\\')
+                {
+                    eprintln!("Invalid mode or key: must not contain path separators or '..'");
+                    std::process::exit(1);
+                }
                 let home = omx_config::default_codex_home();
                 let store = omx_state::FileStateStore::new(home.join(".omx"));
                 let path = std::path::PathBuf::from(format!("{mode}/{key}.json"));
@@ -504,6 +513,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
             HookApiAction::StateWrite { mode, key, value } => {
+                if mode.contains("..") || mode.contains('/') || mode.contains('\\')
+                    || key.contains("..") || key.contains('/') || key.contains('\\')
+                {
+                    eprintln!("Invalid mode or key: must not contain path separators or '..'");
+                    std::process::exit(1);
+                }
                 let home = omx_config::default_codex_home();
                 let store = omx_state::FileStateStore::new(home.join(".omx"));
                 let path = std::path::PathBuf::from(format!("{mode}/{key}.json"));

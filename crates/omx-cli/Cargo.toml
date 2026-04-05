@@ -18,7 +18,6 @@ omx-hooks = { path = "../omx-hooks" }
 omx-team = { path = "../omx-team" }
 omx-hud = { path = "../omx-hud" }
 omx-setup = { path = "../omx-setup" }
-omx-mux = { path = "../omx-mux" }
 clap = { workspace = true }
 chrono = { workspace = true }
 tokio = { workspace = true }
