@@ -35,6 +35,36 @@ pub struct NotepadAddDirectiveParams {
     pub priority: Option<String>,
 }
 
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct NotepadReadParams {
+    /// Section to read: "priority" or "working"
+    pub section: String,
+    /// Maximum number of entries to return (default: all)
+    pub limit: Option<u32>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct NotepadWritePriorityParams {
+    /// Content to write to priority notepad
+    pub content: String,
+    /// Optional tags for categorization
+    pub tags: Option<Vec<String>>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct NotepadWriteWorkingParams {
+    /// Content to write to working notepad
+    pub content: String,
+    /// Optional tags for categorization
+    pub tags: Option<Vec<String>>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct NotepadStatsParams {
+    /// Optional section filter: "priority", "working", or omit for both
+    pub section: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct MemoryEntry {
     key: String,
@@ -87,6 +117,31 @@ impl MemoryMcpServer {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default();
         format!("{}Z", dur.as_secs())
+    }
+
+    fn notepad_path(section: &str) -> PathBuf {
+        Path::new("notepad").join(section).join("entries.jsonl")
+    }
+
+    async fn read_notepad_entries(&self, section: &str) -> Result<Vec<NoteEntry>, String> {
+        let path = Self::notepad_path(section);
+        let full_path = self.store.resolve(&path);
+
+        if !full_path.exists() {
+            return Ok(Vec::new());
+        }
+
+        let contents = tokio::fs::read_to_string(&full_path)
+            .await
+            .map_err(|e| format!("failed to read notepad: {e}"))?;
+
+        let entries: Vec<NoteEntry> = contents
+            .lines()
+            .filter(|line| !line.trim().is_empty())
+            .filter_map(|line| serde_json::from_str(line).ok())
+            .collect();
+
+        Ok(entries)
     }
 }
 
@@ -206,6 +261,108 @@ impl MemoryMcpServer {
             Ok(()) => "Directive added".to_string(),
             Err(e) => format!("Error adding directive: {e}"),
         }
+    }
+
+    #[tool(description = "Read notepad contents from a section (priority or working)")]
+    async fn notepad_read(&self, #[tool(aggr)] params: NotepadReadParams) -> String {
+        let section = params.section.as_str();
+        if section != "priority" && section != "working" {
+            return "Error: section must be \"priority\" or \"working\"".to_string();
+        }
+
+        match self.read_notepad_entries(section).await {
+            Ok(entries) => {
+                if entries.is_empty() {
+                    return format!("No entries in {section} notepad");
+                }
+                let limited: Vec<&NoteEntry> = if let Some(limit) = params.limit {
+                    entries.iter().rev().take(limit as usize).collect()
+                } else {
+                    entries.iter().collect()
+                };
+                serde_json::to_string_pretty(&limited).unwrap_or_default()
+            }
+            Err(e) => format!("Error reading notepad: {e}"),
+        }
+    }
+
+    #[tool(description = "Write to priority notepad (high-importance items that surface in context)")]
+    async fn notepad_write_priority(
+        &self,
+        #[tool(aggr)] params: NotepadWritePriorityParams,
+    ) -> String {
+        let entry = NoteEntry {
+            note: params.content,
+            tags: params.tags.unwrap_or_default(),
+            created_at: Self::now_iso(),
+        };
+
+        let path = Self::notepad_path("priority");
+        match self.store.append_jsonl(&path, &entry).await {
+            Ok(()) => "Priority note added".to_string(),
+            Err(e) => format!("Error writing priority note: {e}"),
+        }
+    }
+
+    #[tool(description = "Write to working notepad (scratch/WIP items for background reference)")]
+    async fn notepad_write_working(
+        &self,
+        #[tool(aggr)] params: NotepadWriteWorkingParams,
+    ) -> String {
+        let entry = NoteEntry {
+            note: params.content,
+            tags: params.tags.unwrap_or_default(),
+            created_at: Self::now_iso(),
+        };
+
+        let path = Self::notepad_path("working");
+        match self.store.append_jsonl(&path, &entry).await {
+            Ok(()) => "Working note added".to_string(),
+            Err(e) => format!("Error writing working note: {e}"),
+        }
+    }
+
+    #[tool(description = "Get notepad statistics: entry count, size, last modified")]
+    async fn notepad_stats(&self, #[tool(aggr)] params: NotepadStatsParams) -> String {
+        let sections: Vec<&str> = match params.section.as_deref() {
+            Some("priority") => vec!["priority"],
+            Some("working") => vec!["working"],
+            _ => vec!["priority", "working"],
+        };
+
+        let mut stats = serde_json::Map::new();
+
+        for section in sections {
+            let entries = match self.read_notepad_entries(section).await {
+                Ok(e) => e,
+                Err(e) => {
+                    stats.insert(
+                        section.to_string(),
+                        serde_json::json!({"error": e}),
+                    );
+                    continue;
+                }
+            };
+
+            let path = Self::notepad_path(section);
+            let full_path = self.store.resolve(&path);
+            let file_size = tokio::fs::metadata(&full_path)
+                .await
+                .map(|m| m.len())
+                .unwrap_or(0);
+            let last_modified = entries.last().map(|e| e.created_at.clone());
+
+            stats.insert(
+                section.to_string(),
+                serde_json::json!({
+                    "entry_count": entries.len(),
+                    "file_size_bytes": file_size,
+                    "last_modified": last_modified,
+                }),
+            );
+        }
+
+        serde_json::to_string_pretty(&serde_json::Value::Object(stats)).unwrap_or_default()
     }
 }
 
