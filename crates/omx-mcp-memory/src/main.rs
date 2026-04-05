@@ -161,10 +161,10 @@ impl MemoryMcpServer {
                                 .trim_end_matches('Z')
                                 .parse()
                                 .unwrap_or(u64::MAX);
-                            if ts < cutoff_secs {
-                                if self.store.delete(relative).await.is_ok() {
-                                    pruned += 1;
-                                }
+                            if ts < cutoff_secs
+                                && self.store.delete(relative).await.is_ok()
+                            {
+                                pruned += 1;
                             }
                         }
                     }
