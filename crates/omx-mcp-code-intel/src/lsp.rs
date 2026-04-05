@@ -14,6 +14,7 @@ pub struct LspClient {
     pending: Arc<Mutex<HashMap<i64, oneshot::Sender<serde_json::Value>>>>,
     next_id: AtomicI64,
     _child: Arc<Mutex<Child>>,
+    #[allow(dead_code)]
     pub language: String,
     pub server_cmd: String,
 }
