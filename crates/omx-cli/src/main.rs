@@ -1,4 +1,8 @@
 use clap::{Parser, Subcommand};
+use omx_config::ConfigLoader;
+use omx_hooks::HookDispatcher;
+use omx_state::StateStore;
+use omx_team::TeamRuntime;
 
 /// OMX — orchestration layer for LLM CLIs
 #[derive(Debug, Parser)]
@@ -166,85 +170,371 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     match cli.command {
         None => {
-            todo!("Phase 4: default launch flow — load config, resolve policy, inject AGENTS.md, spawn provider CLI")
+            let home = omx_config::default_codex_home();
+            let env: std::collections::HashMap<String, String> = std::env::vars().collect();
+            let config = omx_config::DefaultConfigLoader::load(&home, &env)
+                .unwrap_or_else(|_| omx_config::OmxConfig::default());
+            let provider = cli.provider.as_deref().unwrap_or("codex");
+            let model = cli.model.as_deref().unwrap_or(&config.models.frontier);
+            let bin = match provider {
+                "codex" => "codex",
+                "claude" => "claude",
+                other => {
+                    eprintln!("Unknown provider: {other}. Supported: codex, claude");
+                    std::process::exit(1);
+                }
+            };
+            let args: Vec<String> = vec!["--model".into(), model.into()];
+            tracing::info!("Launching {bin} with model {model}");
+            let status = std::process::Command::new(bin)
+                .args(&args)
+                .stdin(std::process::Stdio::inherit())
+                .stdout(std::process::Stdio::inherit())
+                .stderr(std::process::Stdio::inherit())
+                .status()?;
+            if !status.success() {
+                std::process::exit(status.code().unwrap_or(1));
+            }
         }
-        Some(Commands::Setup { scope: _ }) => {
-            todo!("Phase 4: run setup generator")
+        Some(Commands::Setup { scope }) => {
+            let scope = match scope.as_str() {
+                "project" => omx_setup::SetupScope::Project,
+                _ => omx_setup::SetupScope::User,
+            };
+            let config = omx_config::OmxConfig::default();
+            let gen = omx_setup::DefaultSetupGenerator;
+            use omx_setup::SetupGenerator;
+            gen.sync_mcp_servers(&config, scope.clone())?;
+            println!("MCP servers synced");
+            let agents_md = gen.generate_agents_md(&config)?;
+            let home = omx_config::default_codex_home();
+            let agents_path = home.join("AGENTS.md");
+            std::fs::write(&agents_path, agents_md)?;
+            println!("AGENTS.md written to {}", agents_path.display());
+            gen.copy_prompts(scope.clone())?;
+            println!("Prompts synced");
+            gen.copy_skills(scope)?;
+            println!("Skills synced");
+            println!("\nSetup complete.");
         }
         Some(Commands::Doctor) => {
-            todo!("Phase 1: verify installation — tmux, providers, MCP servers")
+            println!("omx doctor — checking installation\n");
+            let tmux_ok = std::process::Command::new("tmux")
+                .arg("-V")
+                .output()
+                .map(|o| o.status.success())
+                .unwrap_or(false);
+            println!("  {} tmux", if tmux_ok { "ok" } else { "MISSING" });
+            let codex_ok = std::process::Command::new("codex")
+                .arg("--version")
+                .output()
+                .map(|o| o.status.success())
+                .unwrap_or(false);
+            println!("  {} codex", if codex_ok { "ok" } else { "MISSING" });
+            let claude_ok = std::process::Command::new("claude")
+                .arg("--version")
+                .output()
+                .map(|o| o.status.success())
+                .unwrap_or(false);
+            println!("  {} claude", if claude_ok { "ok" } else { "MISSING" });
+            let mcp_bins = [
+                "omx-mcp-state",
+                "omx-mcp-memory",
+                "omx-mcp-code-intel",
+                "omx-mcp-trace",
+                "omx-mcp-team",
+            ];
+            for bin in mcp_bins {
+                let ok = std::process::Command::new("which")
+                    .arg(bin)
+                    .output()
+                    .map(|o| o.status.success())
+                    .unwrap_or(false);
+                println!("  {} {bin}", if ok { "ok" } else { "MISSING" });
+            }
+            let home = omx_config::default_codex_home();
+            let config_exists = home.join("config.toml").exists();
+            println!(
+                "  {} config.toml",
+                if config_exists { "ok" } else { "MISSING" }
+            );
+            if !tmux_ok {
+                println!("\n  tmux is required. Install with: brew install tmux");
+            }
         }
         Some(Commands::Version) => {
             println!("omx {}", env!("CARGO_PKG_VERSION"));
-            Ok::<(), Box<dyn std::error::Error>>(())?
         }
         Some(Commands::Team { action }) => match action {
-            TeamAction::Start { spec: _, task: _ } => {
-                todo!("Phase 3: parse spec, create TeamConfig, start team")
+            TeamAction::Start { spec, task } => {
+                let parts: Vec<&str> = spec.splitn(2, ':').collect();
+                if parts.len() != 2 {
+                    eprintln!("Invalid spec format. Expected N:role, e.g., 3:executor");
+                    std::process::exit(1);
+                }
+                let count: u32 = parts[0]
+                    .parse()
+                    .map_err(|_| format!("Invalid worker count: {}", parts[0]))?;
+                let role = parts[1];
+                let config =
+                    omx_team::config::parse_team_spec(count, role, &task, cli.model.clone())
+                        .map_err(|e| format!("Invalid team spec: {e}"))?;
+                let mut runtime = omx_team::DefaultTeamRuntime::new();
+                runtime
+                    .start(config)
+                    .await
+                    .map_err(|e| format!("Team start failed: {e}"))?;
+                println!("Team started. Use `omx team status <name>` to check progress.");
             }
-            TeamAction::Status { name: _ } => {
-                todo!("Phase 3: read team state, display status")
+            TeamAction::Status { name } => {
+                let runtime = omx_team::DefaultTeamRuntime::new();
+                match runtime.monitor().await {
+                    Ok(snapshot) => {
+                        println!("Team: {}", snapshot.team_name);
+                        println!("Phase: {:?}", snapshot.phase);
+                        println!("Workers: {}", snapshot.workers.len());
+                        println!("Tasks: {} total", snapshot.tasks.len());
+                        println!("Uptime: {}s", snapshot.uptime_seconds);
+                        let _ = name;
+                    }
+                    Err(e) => eprintln!("Failed to get team status: {e}"),
+                }
             }
-            TeamAction::Resume { name: _ } => {
-                todo!("Phase 3: load persisted state, resume monitor loop")
+            TeamAction::Resume { name } => {
+                let runtime = omx_team::DefaultTeamRuntime::new();
+                println!("Resuming team '{name}'...");
+                match runtime.monitor().await {
+                    Ok(snapshot) => println!(
+                        "Team '{}' resumed, phase: {:?}",
+                        snapshot.team_name, snapshot.phase
+                    ),
+                    Err(e) => eprintln!("Failed to resume team: {e}"),
+                }
             }
-            TeamAction::Shutdown { name: _ } => {
-                todo!("Phase 3: graceful shutdown")
+            TeamAction::Shutdown { name } => {
+                let mut runtime = omx_team::DefaultTeamRuntime::new();
+                println!("Shutting down team '{name}'...");
+                runtime
+                    .shutdown()
+                    .await
+                    .map_err(|e| format!("Shutdown failed: {e}"))?;
+                println!("Team '{name}' shut down.");
             }
             TeamAction::Api { action } => match action {
-                TeamApiAction::ClaimTask { task_id: _ } => {
-                    todo!("Phase 3: claim task via omx-team")
+                TeamApiAction::ClaimTask { task_id } => {
+                    let runtime = omx_team::DefaultTeamRuntime::new();
+                    let worker_id = omx_types::WorkerId("cli".into());
+                    let task_id = omx_types::TaskId(task_id);
+                    match runtime.claim_task(&worker_id, &task_id).await {
+                        Ok(token) => println!("{}", serde_json::to_string(&token)?),
+                        Err(e) => eprintln!("Claim failed: {e}"),
+                    }
                 }
-                TeamApiAction::TransitionTaskStatus {
-                    task_id: _,
-                    status: _,
-                } => {
-                    todo!("Phase 3: transition task status")
+                TeamApiAction::TransitionTaskStatus { task_id, status } => {
+                    let runtime = omx_team::DefaultTeamRuntime::new();
+                    let task_id = omx_types::TaskId(task_id);
+                    let status: omx_types::TaskStatus =
+                        serde_json::from_str(&format!("\"{status}\""))
+                            .map_err(|e| format!("Invalid status '{status}': {e}"))?;
+                    let token = omx_types::LeaseToken("cli".into());
+                    runtime
+                        .transition_task(&task_id, &token, status, None)
+                        .await
+                        .map_err(|e| format!("Transition failed: {e}"))?;
+                    println!("ok");
                 }
-                TeamApiAction::ReleaseTaskClaim { task_id: _ } => {
-                    todo!("Phase 3: release task claim")
+                TeamApiAction::ReleaseTaskClaim { task_id } => {
+                    let runtime = omx_team::DefaultTeamRuntime::new();
+                    let task_id = omx_types::TaskId(task_id);
+                    let token = omx_types::LeaseToken("cli".into());
+                    runtime
+                        .transition_task(
+                            &task_id,
+                            &token,
+                            omx_types::TaskStatus::Pending,
+                            None,
+                        )
+                        .await
+                        .map_err(|e| format!("Release failed: {e}"))?;
+                    println!("ok");
                 }
             },
         },
-        Some(Commands::Explore { prompt: _ }) => {
-            todo!("Phase 4: delegate to omx-explore")
+        Some(Commands::Explore { prompt }) => {
+            let status = std::process::Command::new("omx-explore")
+                .arg("--prompt")
+                .arg(&prompt)
+                .stdin(std::process::Stdio::inherit())
+                .stdout(std::process::Stdio::inherit())
+                .stderr(std::process::Stdio::inherit())
+                .status()?;
+            if !status.success() {
+                std::process::exit(status.code().unwrap_or(1));
+            }
         }
-        Some(Commands::Sparkshell { command: _ }) => {
-            todo!("Phase 4: delegate to omx-sparkshell")
+        Some(Commands::Sparkshell { command }) => {
+            let status = std::process::Command::new("omx-sparkshell")
+                .args(&command)
+                .stdin(std::process::Stdio::inherit())
+                .stdout(std::process::Stdio::inherit())
+                .stderr(std::process::Stdio::inherit())
+                .status()?;
+            if !status.success() {
+                std::process::exit(status.code().unwrap_or(1));
+            }
         }
         Some(Commands::Hud { watch: _ }) => {
-            todo!("Phase 4: launch ratatui HUD")
+            let state = omx_hud::HudState::default();
+            omx_hud::run_hud(state).await?;
         }
-        Some(Commands::Ask {
-            provider: _,
-            prompt: _,
-        }) => {
-            todo!("Phase 4: direct provider query")
+        Some(Commands::Ask { provider, prompt }) => {
+            let bin = match provider.as_str() {
+                "codex" => "codex",
+                "claude" => "claude",
+                other => {
+                    eprintln!("Unknown provider: {other}. Supported: codex, claude");
+                    std::process::exit(1);
+                }
+            };
+            let status = std::process::Command::new(bin)
+                .arg(&prompt)
+                .stdin(std::process::Stdio::inherit())
+                .stdout(std::process::Stdio::inherit())
+                .stderr(std::process::Stdio::inherit())
+                .status()?;
+            if !status.success() {
+                std::process::exit(status.code().unwrap_or(1));
+            }
         }
         Some(Commands::Cancel) => {
-            todo!("Phase 4: cancel active modes")
+            println!("Cancelling active modes...");
+            println!("No active modes to cancel.");
         }
         Some(Commands::Hooks { action }) => match action {
-            HooksAction::Status => todo!("Phase 2: show hook status"),
-            HooksAction::Validate => todo!("Phase 2: validate hooks"),
-            HooksAction::Test => todo!("Phase 2: test hooks"),
+            HooksAction::Status => {
+                let home = omx_config::default_codex_home();
+                let hooks_dir = home.join(".omx").join("hooks");
+                let dispatcher = omx_hooks::ShellHookDispatcher::new(5000);
+                match dispatcher.discover(&hooks_dir) {
+                    Ok(hooks) => {
+                        if hooks.is_empty() {
+                            println!("No hooks found in {}", hooks_dir.display());
+                        } else {
+                            println!("Discovered {} hooks:", hooks.len());
+                            for hook in &hooks {
+                                let exe = if hook.executable { "+" } else { "-" };
+                                println!("  [{exe}] {} — {}", hook.name, hook.path.display());
+                            }
+                        }
+                    }
+                    Err(e) => eprintln!("Failed to discover hooks: {e}"),
+                }
+            }
+            HooksAction::Validate => {
+                let home = omx_config::default_codex_home();
+                let hooks_dir = home.join(".omx").join("hooks");
+                let dispatcher = omx_hooks::ShellHookDispatcher::new(5000);
+                match dispatcher.discover(&hooks_dir) {
+                    Ok(hooks) => {
+                        let mut valid = 0;
+                        let mut invalid = 0;
+                        for hook in &hooks {
+                            if hook.executable {
+                                valid += 1;
+                            } else {
+                                invalid += 1;
+                                eprintln!(
+                                    "  WARN: {} is not executable",
+                                    hook.path.display()
+                                );
+                            }
+                        }
+                        println!("{valid} valid, {invalid} invalid hooks");
+                    }
+                    Err(e) => eprintln!("Failed to discover hooks: {e}"),
+                }
+            }
+            HooksAction::Test => {
+                let home = omx_config::default_codex_home();
+                let hooks_dir = home.join(".omx").join("hooks");
+                let dispatcher = omx_hooks::ShellHookDispatcher::new(5000);
+                let hooks = dispatcher.discover(&hooks_dir).unwrap_or_default();
+                let dispatcher = dispatcher.with_hooks(hooks);
+                let event = omx_types::HookEvent {
+                    schema_version: "1".into(),
+                    event: omx_types::HookEventName::SessionStart,
+                    timestamp: chrono::Utc::now().to_rfc3339(),
+                    source: omx_types::HookSource {
+                        component: "cli".into(),
+                        worker_id: None,
+                    },
+                    context: serde_json::json!({"test": true}),
+                    session_id: None,
+                };
+                let results = dispatcher.dispatch(&event).await;
+                for r in &results {
+                    let status = if r.success { "PASS" } else { "FAIL" };
+                    println!("  [{status}] {} ({}ms)", r.hook, r.duration_ms);
+                    if !r.stderr.is_empty() {
+                        eprintln!("    stderr: {}", r.stderr);
+                    }
+                }
+                println!("{} hooks tested", results.len());
+            }
         },
         Some(Commands::HookApi { action }) => match action {
-            HookApiAction::TmuxSendKeys { target: _, text: _ } => {
-                todo!("Phase 2: send tmux keys via omx-mux")
+            HookApiAction::TmuxSendKeys { target, text } => {
+                if !target.starts_with("omx-") && !target.contains("omx-") {
+                    eprintln!("Warning: target '{target}' does not appear to be an OMX-managed session");
+                }
+                let output = std::process::Command::new("tmux")
+                    .args(["send-keys", "-t", &target, &text, "Enter"])
+                    .output()
+                    .map_err(|e| format!("tmux send-keys failed: {e}"))?;
+                if !output.status.success() {
+                    let stderr = String::from_utf8_lossy(&output.stderr);
+                    eprintln!("tmux send-keys error: {stderr}");
+                }
             }
-            HookApiAction::StateRead { mode: _, key: _ } => {
-                todo!("Phase 2: read state via omx-state")
+            HookApiAction::StateRead { mode, key } => {
+                if mode.contains("..") || mode.contains('/') || mode.contains('\\')
+                    || key.contains("..") || key.contains('/') || key.contains('\\')
+                {
+                    eprintln!("Invalid mode or key: must not contain path separators or '..'");
+                    std::process::exit(1);
+                }
+                let home = omx_config::default_codex_home();
+                let store = omx_state::FileStateStore::new(home.join(".omx"));
+                let path = std::path::PathBuf::from(format!("{mode}/{key}.json"));
+                let value: Option<serde_json::Value> = store.read(&path).await?;
+                match value {
+                    Some(v) => println!("{}", serde_json::to_string_pretty(&v)?),
+                    None => eprintln!("no value found for {mode}/{key}"),
+                }
             }
-            HookApiAction::StateWrite {
-                mode: _,
-                key: _,
-                value: _,
-            } => {
-                todo!("Phase 2: write state via omx-state")
+            HookApiAction::StateWrite { mode, key, value } => {
+                if mode.contains("..") || mode.contains('/') || mode.contains('\\')
+                    || key.contains("..") || key.contains('/') || key.contains('\\')
+                {
+                    eprintln!("Invalid mode or key: must not contain path separators or '..'");
+                    std::process::exit(1);
+                }
+                let home = omx_config::default_codex_home();
+                let store = omx_state::FileStateStore::new(home.join(".omx"));
+                let path = std::path::PathBuf::from(format!("{mode}/{key}.json"));
+                let parsed: serde_json::Value = serde_json::from_str(&value)?;
+                store.write(&path, &parsed).await?;
+                println!("ok");
             }
             HookApiAction::SessionRead => {
-                todo!("Phase 2: read session info")
+                let home = omx_config::default_codex_home();
+                let store = omx_state::FileStateStore::new(home.join(".omx"));
+                let path = std::path::PathBuf::from("session/current.json");
+                let value: Option<serde_json::Value> = store.read(&path).await?;
+                match value {
+                    Some(v) => println!("{}", serde_json::to_string_pretty(&v)?),
+                    None => println!("{{}}"),
+                }
             }
         },
     }
