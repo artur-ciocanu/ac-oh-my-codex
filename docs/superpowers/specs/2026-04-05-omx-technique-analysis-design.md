@@ -699,3 +699,234 @@ This reveals a two-way opportunity:
 - Fensel, Benjamins, Studer — *Knowledge Engineering: Principles and Methods* (DKE, 1998)
 - Chandrasekaran — *Generic Tasks as Building Blocks* (IEEE Expert, 1986)
 - Iglesias et al. — *MAS-CommonKADS* (IWMAS, 1997)
+
+---
+
+## Part 6: Prompt Engineering is Knowledge Engineering, Not Craft
+
+### The Problem with "Prompt Engineering"
+
+The prompting industry has built a mystique around what is fundamentally structured knowledge engineering dressed up as creative writing. "Top 10 prompting tips" is the 2025 equivalent of "10 tricks to write better SQL" — it mistakes syntax for design. Courses teach surface patterns ("be specific," "give examples," "assign a role") without teaching the underlying discipline: what does the agent need to know, what must it be able to infer, and what are its boundaries?
+
+OMX's 32 agent prompts demonstrate that there is no magic. Every prompt follows the same 7-section constraint skeleton. The variation between agents is in the **domain content**, not in the "prompting technique." Creating a new agent isn't a creative act — it's an analysis task:
+
+1. Define goals → fill `identity`
+2. Define boundaries → fill `scope_guard`
+3. Define input requirements → fill `ask_gate`
+4. Define reasoning steps → fill `execution_loop`
+5. Define quality checks → fill `verification_loop`
+6. Define failure modes → fill `anti_patterns`
+7. Define output gates → fill `final_checklist`
+
+That's a checklist. A process. A **method** — in exactly the PSM sense.
+
+Clancey figured this out in 1985. He looked at MYCIN and said: the expertise isn't in the rules, it's in the inference pattern underneath. Same thing here. The expertise isn't in the prompt text, it's in the knowledge-level spec underneath. The natural language inside the XML tags is the *output* of analysis, not the analysis itself.
+
+### The Knowledge-Level Spec: YAML as Source of Truth
+
+If prompts are compiled artifacts, what's the source? A YAML spec that captures the knowledge-level description of each agent — implementation-independent, diffable, machine-parseable, and free of prompt-craft mystique.
+
+#### Schema
+
+```yaml
+# Agent Knowledge-Level Spec (per Newell's knowledge level)
+agent: <name>
+archetype: <behavioral archetype>
+mandate: <one-sentence purpose>
+
+goals:
+  - id: G<n>
+    name: <kebab-case-name>
+    criterion: <measurable success condition>
+
+knows:
+  - id: K<n>
+    domain: <knowledge-domain-name>
+    why: <why this knowledge is needed>
+
+can_infer:
+  - id: I<n>
+    name: <inference-name>
+    input: <what goes in>
+    output: <what comes out>
+
+limits:
+  - id: L<n>
+    what: <kebab-case-limitation>
+    rationale: <why this boundary exists>
+
+dispositions:
+  - bias: <toward-what>
+    manifests: <observable behavior>
+```
+
+#### Concrete Example: Executor
+
+```yaml
+agent: executor
+archetype: deep-worker
+mandate: Deliver working code changes with verification evidence
+
+goals:
+  - id: G1
+    name: deliver-working-change
+    criterion: Requested behavior is implemented, not partial, not speculative
+  - id: G2
+    name: prove-correctness
+    criterion: Fresh tool-backed verification evidence accompanies every claim
+  - id: G3
+    name: minimize-blast-radius
+    criterion: Smallest viable diff that achieves correctness
+  - id: G4
+    name: preserve-decision-context
+    criterion: Commits encode why, what was rejected, and confidence
+  - id: G5
+    name: finish-or-escalate
+    criterion: Never stop in a middle state
+
+knows:
+  - id: K1
+    domain: source-code-navigation
+    why: Find what's relevant before changing anything
+  - id: K2
+    domain: diff-semantics
+    why: Avoid scope creep while achieving correctness
+  - id: K3
+    domain: type-system-diagnostics
+    why: Verify changes don't break type contracts
+  - id: K4
+    domain: test-ecosystem
+    why: Verify behavioral correctness
+  - id: K5
+    domain: build-pipeline
+    why: Verify integration correctness
+  - id: K6
+    domain: git-conventions
+    why: Produce lore commits preserving decision context
+  - id: K7
+    domain: existing-repo-patterns
+    why: Reuse before inventing
+  - id: K8
+    domain: tool-capabilities
+    why: Select the right tool for the job
+
+can_infer:
+  - id: I1
+    name: relevance-assessment
+    input: task description + codebase
+    output: set of files that need reading
+  - id: I2
+    name: interpretation-selection
+    input: ambiguous request + repo evidence
+    output: likeliest safe interpretation with noted assumptions
+  - id: I3
+    name: scope-boundary-detection
+    input: proposed change + surrounding code
+    output: is this still minimal or has scope crept
+  - id: I4
+    name: regression-risk-estimation
+    input: change diff + existing tests
+    output: what could break, what needs verification
+  - id: I5
+    name: verification-sufficiency
+    input: tool output
+    output: enough evidence or more checks needed
+  - id: I6
+    name: slop-detection
+    input: own output
+    output: AI artifacts present or clean
+  - id: I7
+    name: approach-exhaustion
+    input: failure history
+    output: genuinely different approach or same idea reworded
+  - id: I8
+    name: escalation-judgment
+    input: 3 failed approaches on same blocker
+    output: stop and escalate with evidence
+
+limits:
+  - id: L1
+    what: no-architectural-decisions
+    rationale: Architect's role — executor works within existing architecture
+  - id: L2
+    what: no-scope-expansion
+    rationale: Unless correctness requires it
+  - id: L3
+    what: no-unverified-claims
+    rationale: Fresh verification required for every completion
+  - id: L4
+    what: no-premature-asking
+    rationale: Codebase is primary knowledge source
+  - id: L5
+    what: max-3-retries
+    rationale: Circuit breaker prevents infinite loops
+  - id: L6
+    what: plans-are-immutable
+    rationale: .omx/plans/ are contracts from upstream
+  - id: L7
+    what: no-trusted-delegation
+    rationale: Must independently verify delegated work
+
+dispositions:
+  - bias: toward-action
+    manifests: If one reasonable interpretation exists, proceed
+  - bias: toward-evidence
+    manifests: Every claim backed by tool output
+  - bias: toward-minimality
+    manifests: Smallest diff, fewest abstractions, most reuse
+  - bias: toward-completion
+    manifests: Keep going until done, don't stop at findings
+  - bias: toward-honesty
+    manifests: Note assumptions, document failures, include confidence
+```
+
+#### What This Enables
+
+**Spec → Prompt compilation.** The YAML spec maps mechanically to the constraint skeleton:
+
+| Skeleton Section | Compiled From |
+|---|---|
+| `<identity>` | `agent` + `archetype` + `mandate` |
+| `<scope_guard>` | `limits[]` |
+| `<ask_gate>` | `can_infer[I2]` + `limits[L4]` + `dispositions[toward-action]` |
+| `<execution_loop>` | `knows[]` + `can_infer[I1, I3, I4]` |
+| `<verification_loop>` | `can_infer[I5, I6]` + `goals[G2]` |
+| `<anti_patterns>` | `limits[]` restated as negative examples |
+| `<final_checklist>` | `goals[]` restated as boolean gates |
+
+The natural language inside each section is the prose expansion of structured data. A template engine + the YAML spec + a tool-mapping file (tool names per target platform) produces the prompt.
+
+**Spec → Evaluation derivation.** Each `can_infer` entry is a testable claim:
+
+| Spec Entry | Test Case |
+|---|---|
+| I1: relevance-assessment | Give a task + repo, check if the agent reads the right files |
+| I2: interpretation-selection | Give an ambiguous request, check if it picks a safe interpretation |
+| I5: verification-sufficiency | Give partial evidence, check if the agent asks for more |
+| I6: slop-detection | Give output with AI artifacts, check if the agent catches them |
+| I8: escalation-judgment | Fail 3 approaches, check if the agent stops and escalates |
+
+**Spec → Cross-agent comparison.** Shared knowledge entries become visible:
+
+| Knowledge Entry | Executor | Debugger | Architect | Critic |
+|---|---|---|---|---|
+| K1: source-code-navigation | yes | yes | yes | yes |
+| K3: type-system-diagnostics | yes | yes | no | no |
+| K6: git-conventions | yes | no | no | no |
+| I6: slop-detection | yes | no | no | yes |
+
+**Spec → Onboarding.** A new contributor reads 30 lines of YAML instead of parsing 2000 words of nested XML with natural language instructions.
+
+### The Argument in One Sentence
+
+If a YAML spec plus a template can produce a working agent prompt, then the "skill" was never in the writing — it was in the analysis. Prompt engineering is knowledge engineering. OMX proves it. PSM theory explains why.
+
+### What Classical KE Genuinely Adds
+
+With the "formal verification" and "systematic cross-domain reuse" arguments set aside as poor fits for LLM-land, what classical KE still contributes:
+
+**The Knowledge Level (Newell).** The YAML spec above *is* a knowledge-level description. OMX arrived at it empirically; classical KE provides the theoretical justification for why it works: describing agent behavior in terms of goals and knowledge, independent of implementation, is the right level of abstraction for design, comparison, and reuse.
+
+**Inference pattern libraries.** Classical KE catalogued reusable inference patterns (heuristic classification, propose-critique-modify, cover-and-differentiate). OMX has its own patterns (evidence-ranked hypotheses, circuit-breaker escalation, tiered verification) but hasn't organized them as a reusable library with formal input/output contracts. The `can_infer` entries in the YAML spec are the beginning of this — each one is a named, typed inference pattern that could be shared across agents.
+
+**The distinction between domain knowledge and inference knowledge.** This is the key insight OMX would benefit from making explicit. In the executor spec, `knows` entries are domain knowledge (what the world looks like) and `can_infer` entries are inference knowledge (what reasoning steps to perform). Classical KE proved that separating these cleanly enables reuse — the same inference pattern works across different domains. OMX's constraint skeleton partially enforces this separation (execution_loop mixes both), but the YAML spec makes it crisp.
