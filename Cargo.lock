@@ -1097,10 +1097,12 @@ dependencies = [
 name = "omx-cli"
 version = "0.11.13"
 dependencies = [
+ "chrono",
  "clap",
  "omx-config",
  "omx-hooks",
  "omx-hud",
+ "omx-mux",
  "omx-setup",
  "omx-state",
  "omx-team",
