@@ -57,12 +57,13 @@ impl StateStore for FileStateStore {
         }
 
         let data = tokio::task::spawn_blocking(move || -> Result<Vec<u8>, OmxError> {
-            use fs2::FileExt;
-            let file = std::fs::File::open(&full_path)?;
-            file.lock_shared()
+            use std::io::Read;
+            let mut file = std::fs::File::open(&full_path)?;
+            fs2::FileExt::lock_shared(&file)
                 .map_err(|e| OmxError::State(format!("failed to acquire shared lock: {e}")))?;
-            let data = std::fs::read(&full_path)?;
-            file.unlock()
+            let mut data = Vec::new();
+            file.read_to_end(&mut data)?;
+            fs2::FileExt::unlock(&file)
                 .map_err(|e| OmxError::State(format!("failed to release lock: {e}")))?;
             Ok(data)
         })
