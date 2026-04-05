@@ -20,9 +20,19 @@ pub struct HudState {
     pub uptime_seconds: u64,
 }
 
+struct TerminalGuard;
+
+impl Drop for TerminalGuard {
+    fn drop(&mut self) {
+        let _ = disable_raw_mode();
+        let _ = stdout().execute(LeaveAlternateScreen);
+    }
+}
+
 pub async fn run_hud(initial_state: HudState) -> Result<(), Box<dyn std::error::Error>> {
     enable_raw_mode()?;
     stdout().execute(EnterAlternateScreen)?;
+    let _guard = TerminalGuard; // cleanup runs on drop (even on panic)
 
     let backend = ratatui::backend::CrosstermBackend::new(stdout());
     let mut terminal = ratatui::Terminal::new(backend)?;
@@ -46,8 +56,7 @@ pub async fn run_hud(initial_state: HudState) -> Result<(), Box<dyn std::error::
         }
     }
 
-    disable_raw_mode()?;
-    stdout().execute(LeaveAlternateScreen)?;
+    // _guard drops here, calling disable_raw_mode + LeaveAlternateScreen
     Ok(())
 }
 
