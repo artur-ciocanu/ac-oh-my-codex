@@ -1,0 +1,19 @@
+[package]
+name = "omx-modes"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+omx-types = { path = "../omx-types" }
+omx-config = { path = "../omx-config" }
+omx-state = { path = "../omx-state" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+chrono = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+tokio = { workspace = true }

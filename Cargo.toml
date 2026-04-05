@@ -26,6 +26,10 @@ members = [
   "crates/omx-notify-discord",
   "crates/omx-notify-slack",
   "crates/omx-notify-telegram",
+  "crates/omx-agents",
+  "crates/omx-modes",
+  "crates/omx-session",
+  "crates/omx-catalog",
 ]
 resolver = "2"
 
@@ -57,6 +61,7 @@ tempfile = "3"
 dirs = "5"
 uuid = { version = "1", features = ["v4"] }
 chrono = { version = "0.4", default-features = false, features = ["clock", "serde"] }
+ulid = "1"
 
 # The profile that 'dist' will build with
 [profile.dist]
