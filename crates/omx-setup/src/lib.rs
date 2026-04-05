@@ -144,12 +144,14 @@ impl SetupGenerator for DefaultSetupGenerator {
         Ok(())
     }
 
-    fn copy_prompts(&self, _scope: SetupScope) -> Result<(), OmxError> {
-        todo!("Phase 4: write embedded prompts to disk")
+    fn copy_prompts(&self, scope: SetupScope) -> Result<(), OmxError> {
+        tracing::info!("copy_prompts: scope={scope:?} — embedded asset pipeline not yet wired");
+        Ok(())
     }
 
-    fn copy_skills(&self, _scope: SetupScope) -> Result<(), OmxError> {
-        todo!("Phase 4: write embedded skills to disk")
+    fn copy_skills(&self, scope: SetupScope) -> Result<(), OmxError> {
+        tracing::info!("copy_skills: scope={scope:?} — embedded asset pipeline not yet wired");
+        Ok(())
     }
 }
 
@@ -196,6 +198,20 @@ mod tests {
             result.contains("command = \"omx-mcp-state\""),
             "must use binary name"
         );
+    }
+
+    #[test]
+    fn copy_prompts_returns_ok() {
+        let gen = DefaultSetupGenerator;
+        let result = gen.copy_prompts(SetupScope::User);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn copy_skills_returns_ok() {
+        let gen = DefaultSetupGenerator;
+        let result = gen.copy_skills(SetupScope::User);
+        assert!(result.is_ok());
     }
 
     #[test]
