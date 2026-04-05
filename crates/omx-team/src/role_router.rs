@@ -17,8 +17,22 @@ pub fn route_task(description: &str, available_roles: &[String]) -> Option<Strin
 
     let role_keywords: &[(&str, &[&str])] = &[
         ("planner", &["plan", "design", "architect", "strategy"]),
-        ("researcher", &["research", "investigate", "explore", "analyze"]),
-        ("executor", &["implement", "build", "create", "write", "code", "add", "fix"]),
+        (
+            "researcher",
+            &["research", "investigate", "explore", "analyze"],
+        ),
+        (
+            "executor",
+            &[
+                "implement",
+                "build",
+                "create",
+                "write",
+                "code",
+                "add",
+                "fix",
+            ],
+        ),
         ("reviewer", &["review", "check", "audit", "verify"]),
         ("tester", &["test", "validate", "qa", "quality"]),
         ("writer", &["document", "write docs", "readme", "spec"]),
@@ -42,9 +56,7 @@ pub fn route_task(description: &str, available_roles: &[String]) -> Option<Strin
         }
     }
 
-    best_role
-        .or(available_roles.first())
-        .map(|r| r.to_string())
+    best_role.or(available_roles.first()).map(|r| r.to_string())
 }
 
 #[cfg(test)]

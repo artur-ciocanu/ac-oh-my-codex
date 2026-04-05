@@ -77,14 +77,12 @@ impl TeamMcpServer {
 
         let mut runtime = self.runtime.lock().await;
         match runtime.start(config).await {
-            Ok(()) => {
-                serde_json::json!({
-                    "status": "started",
-                    "team_name": team_name,
-                    "job_id": job_id
-                })
-                .to_string()
-            }
+            Ok(()) => serde_json::json!({
+                "status": "started",
+                "team_name": team_name,
+                "job_id": job_id
+            })
+            .to_string(),
             Err(e) => format!("{{\"error\": \"{e}\"}}"),
         }
     }
@@ -147,14 +145,12 @@ impl TeamMcpServer {
         let runtime = self.runtime.lock().await;
         let leader_id = omx_types::WorkerId("leader".to_string());
         match runtime.send_message(&leader_id, &worker_id, &message).await {
-            Ok(()) => {
-                serde_json::json!({
-                    "status": "nudged",
-                    "worker_id": params.worker_id,
-                    "message": message
-                })
-                .to_string()
-            }
+            Ok(()) => serde_json::json!({
+                "status": "nudged",
+                "worker_id": params.worker_id,
+                "message": message
+            })
+            .to_string(),
             Err(e) => format!("{{\"error\": \"{e}\"}}"),
         }
     }

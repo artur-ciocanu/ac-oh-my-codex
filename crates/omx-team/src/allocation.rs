@@ -1,10 +1,7 @@
 use omx_types::{TaskId, WorkerId};
 
 /// Allocate ready tasks to available workers using round-robin.
-pub fn allocate(
-    ready_tasks: &[TaskId],
-    available_workers: &[WorkerId],
-) -> Vec<(TaskId, WorkerId)> {
+pub fn allocate(ready_tasks: &[TaskId], available_workers: &[WorkerId]) -> Vec<(TaskId, WorkerId)> {
     if available_workers.is_empty() {
         return Vec::new();
     }

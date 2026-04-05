@@ -115,10 +115,7 @@ impl std::fmt::Debug for CodeIntelMcpServer {
 impl CodeIntelMcpServer {
     #[tool(description = "Get TypeScript/JavaScript diagnostics for workspace files")]
     async fn diagnostics_typescript(&self, #[tool(aggr)] params: DiagnosticsParams) -> String {
-        let workspace = params
-            .workspace_root
-            .as_deref()
-            .unwrap_or(".");
+        let workspace = params.workspace_root.as_deref().unwrap_or(".");
 
         let args = vec!["tsc", "--noEmit", "--pretty", "false"];
 
@@ -146,11 +143,7 @@ impl CodeIntelMcpServer {
         let result = if !patterns.is_empty() {
             stdout
                 .lines()
-                .filter(|line| {
-                    patterns
-                        .iter()
-                        .any(|pat| line.contains(pat.as_str()))
-                })
+                .filter(|line| patterns.iter().any(|pat| line.contains(pat.as_str())))
                 .collect::<Vec<&str>>()
                 .join("\n")
         } else {
@@ -166,10 +159,7 @@ impl CodeIntelMcpServer {
 
     #[tool(description = "Search code using AST patterns")]
     async fn ast_pattern_search(&self, #[tool(aggr)] params: AstPatternSearchParams) -> String {
-        let workspace = params
-            .workspace_root
-            .as_deref()
-            .unwrap_or(".");
+        let workspace = params.workspace_root.as_deref().unwrap_or(".");
 
         let type_flag: Option<&str> = params.language.as_deref().and_then(|lang| match lang {
             "typescript" | "ts" => Some("ts"),
@@ -184,9 +174,7 @@ impl CodeIntelMcpServer {
         });
 
         let mut cmd = tokio::process::Command::new("rg");
-        cmd.arg("--json")
-            .arg("--max-count=50")
-            .arg(&params.pattern);
+        cmd.arg("--json").arg("--max-count=50").arg(&params.pattern);
 
         if let Some(t) = type_flag {
             cmd.arg("--type").arg(t);
@@ -335,10 +323,7 @@ impl CodeIntelMcpServer {
     }
 
     #[tool(description = "List symbols in a file via LSP documentSymbol")]
-    async fn lsp_document_symbols(
-        &self,
-        #[tool(aggr)] params: LspDocumentSymbolsParams,
-    ) -> String {
+    async fn lsp_document_symbols(&self, #[tool(aggr)] params: LspDocumentSymbolsParams) -> String {
         let workspace = params.workspace_root.as_deref().unwrap_or(".");
         let client = match self
             .lsp_manager
@@ -354,7 +339,10 @@ impl CodeIntelMcpServer {
             "textDocument": { "uri": uri }
         });
 
-        match client.request("textDocument/documentSymbol", req_params).await {
+        match client
+            .request("textDocument/documentSymbol", req_params)
+            .await
+        {
             Ok(response) => {
                 if let Some(result) = response.get("result") {
                     serde_json::to_string_pretty(result).unwrap_or_default()
@@ -441,10 +429,7 @@ impl CodeIntelMcpServer {
     }
 
     #[tool(description = "Find all references to a symbol at a position via LSP")]
-    async fn lsp_find_references(
-        &self,
-        #[tool(aggr)] params: LspFindReferencesParams,
-    ) -> String {
+    async fn lsp_find_references(&self, #[tool(aggr)] params: LspFindReferencesParams) -> String {
         let workspace = params.workspace_root.as_deref().unwrap_or(".");
         let client = match self
             .lsp_manager

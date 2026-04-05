@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, Command};
-use tokio::sync::{Mutex, oneshot};
+use tokio::sync::{oneshot, Mutex};
 
 /// A lightweight LSP client that communicates via JSON-RPC over stdio.
 pub struct LspClient {
@@ -163,11 +163,7 @@ impl LspClient {
     }
 
     /// Send a JSON-RPC notification (no response expected).
-    pub async fn notify(
-        &self,
-        method: &str,
-        params: serde_json::Value,
-    ) -> Result<(), String> {
+    pub async fn notify(&self, method: &str, params: serde_json::Value) -> Result<(), String> {
         let msg = serde_json::json!({
             "jsonrpc": "2.0",
             "method": method,
@@ -221,11 +217,7 @@ impl LspClientManager {
             "python" | "py" => ("pylsp", vec![]),
             "go" => ("gopls", vec!["serve"]),
             "java" => ("jdtls", vec![]),
-            _ => {
-                return Err(format!(
-                    "No LSP server configured for language: {language}"
-                ))
-            }
+            _ => return Err(format!("No LSP server configured for language: {language}")),
         };
 
         let client = LspClient::start(language, cmd, &args, workspace_root).await?;

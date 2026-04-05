@@ -51,7 +51,11 @@ async fn send_discord_notification(event: &HookEvent) -> (bool, String, String) 
                 (true, format!("Discord: {status}"), String::new())
             } else {
                 let body = resp.text().await.unwrap_or_default();
-                (false, String::new(), format!("Discord API error {status}: {body}"))
+                (
+                    false,
+                    String::new(),
+                    format!("Discord API error {status}: {body}"),
+                )
             }
         }
         Err(e) => (false, String::new(), format!("Discord request failed: {e}")),

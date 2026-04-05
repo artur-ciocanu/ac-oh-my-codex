@@ -172,7 +172,16 @@ impl TmuxAdapter {
     }
 
     fn do_create_window(&self, session: &str, name: &str) -> Result<MuxOutcome, MuxError> {
-        let output = run_tmux(&["new-window", "-t", session, "-n", name, "-P", "-F", "#{session_name}:#{window_index}"])?;
+        let output = run_tmux(&[
+            "new-window",
+            "-t",
+            session,
+            "-n",
+            name,
+            "-P",
+            "-F",
+            "#{session_name}:#{window_index}",
+        ])?;
         let handle = output.trim().to_string();
         Ok(MuxOutcome::WindowCreated { handle })
     }

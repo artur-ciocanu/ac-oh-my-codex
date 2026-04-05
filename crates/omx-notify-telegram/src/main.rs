@@ -35,13 +35,7 @@ async fn send_telegram_notification(event: &HookEvent) -> (bool, String, String)
 
     let chat_id = match std::env::var("OMX_TELEGRAM_CHAT_ID") {
         Ok(c) => c,
-        Err(_) => {
-            return (
-                false,
-                String::new(),
-                "OMX_TELEGRAM_CHAT_ID not set".into(),
-            )
-        }
+        Err(_) => return (false, String::new(), "OMX_TELEGRAM_CHAT_ID not set".into()),
     };
 
     let message = format_hook_message(event);
@@ -74,7 +68,11 @@ async fn send_telegram_notification(event: &HookEvent) -> (bool, String, String)
                 )
             }
         }
-        Err(e) => (false, String::new(), format!("Telegram request failed: {e}")),
+        Err(e) => (
+            false,
+            String::new(),
+            format!("Telegram request failed: {e}"),
+        ),
     }
 }
 

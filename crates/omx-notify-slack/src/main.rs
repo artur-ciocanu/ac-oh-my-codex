@@ -24,13 +24,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 async fn send_slack_notification(event: &HookEvent) -> (bool, String, String) {
     let webhook_url = match std::env::var("OMX_SLACK_WEBHOOK_URL") {
         Ok(url) => url,
-        Err(_) => {
-            return (
-                false,
-                String::new(),
-                "OMX_SLACK_WEBHOOK_URL not set".into(),
-            )
-        }
+        Err(_) => return (false, String::new(), "OMX_SLACK_WEBHOOK_URL not set".into()),
     };
 
     let message = format_hook_message(event);
@@ -44,7 +38,11 @@ async fn send_slack_notification(event: &HookEvent) -> (bool, String, String) {
                 (true, format!("Slack: {status}"), String::new())
             } else {
                 let body = resp.text().await.unwrap_or_default();
-                (false, String::new(), format!("Slack API error {status}: {body}"))
+                (
+                    false,
+                    String::new(),
+                    format!("Slack API error {status}: {body}"),
+                )
             }
         }
         Err(e) => (false, String::new(), format!("Slack request failed: {e}")),

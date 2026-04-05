@@ -105,7 +105,9 @@ impl MemoryMcpServer {
     }
 
     fn memory_path(project: &str, key: &str) -> PathBuf {
-        Path::new("memory").join(project).join(format!("{key}.json"))
+        Path::new("memory")
+            .join(project)
+            .join(format!("{key}.json"))
     }
 
     fn memory_dir(project: &str) -> PathBuf {
@@ -157,9 +159,7 @@ impl MemoryMcpServer {
                 let mut memories = Vec::new();
                 for entry_path in &entries {
                     if let Ok(relative) = entry_path.strip_prefix(self.store.root()) {
-                        if let Ok(Some(entry)) =
-                            self.store.read::<MemoryEntry>(relative).await
-                        {
+                        if let Ok(Some(entry)) = self.store.read::<MemoryEntry>(relative).await {
                             memories.push(entry);
                         }
                     }
@@ -208,17 +208,13 @@ impl MemoryMcpServer {
                 let mut pruned = 0;
                 for entry_path in &entries {
                     if let Ok(relative) = entry_path.strip_prefix(self.store.root()) {
-                        if let Ok(Some(entry)) =
-                            self.store.read::<MemoryEntry>(relative).await
-                        {
+                        if let Ok(Some(entry)) = self.store.read::<MemoryEntry>(relative).await {
                             let ts: u64 = entry
                                 .updated_at
                                 .trim_end_matches('Z')
                                 .parse()
                                 .unwrap_or(u64::MAX);
-                            if ts < cutoff_secs
-                                && self.store.delete(relative).await.is_ok()
-                            {
+                            if ts < cutoff_secs && self.store.delete(relative).await.is_ok() {
                                 pruned += 1;
                             }
                         }
@@ -286,7 +282,9 @@ impl MemoryMcpServer {
         }
     }
 
-    #[tool(description = "Write to priority notepad (high-importance items that surface in context)")]
+    #[tool(
+        description = "Write to priority notepad (high-importance items that surface in context)"
+    )]
     async fn notepad_write_priority(
         &self,
         #[tool(aggr)] params: NotepadWritePriorityParams,
@@ -336,10 +334,7 @@ impl MemoryMcpServer {
             let entries = match self.read_notepad_entries(section).await {
                 Ok(e) => e,
                 Err(e) => {
-                    stats.insert(
-                        section.to_string(),
-                        serde_json::json!({"error": e}),
-                    );
+                    stats.insert(section.to_string(), serde_json::json!({"error": e}));
                     continue;
                 }
             };

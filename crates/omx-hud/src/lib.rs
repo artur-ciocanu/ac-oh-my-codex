@@ -105,11 +105,7 @@ pub fn render_frame(state: &HudState, frame: &mut ratatui::Frame, area: ratatui:
         )),
         Line::from(format!("Uptime: {uptime_min}m {uptime_sec}s")),
     ])
-    .block(
-        Block::default()
-            .title(" Status ")
-            .borders(Borders::ALL),
-    );
+    .block(Block::default().title(" Status ").borders(Borders::ALL));
     frame.render_widget(stats, chunks[1]);
 }
 
@@ -144,8 +140,11 @@ mod tests {
     #[tokio::test]
     async fn run_hud_returns_ok_with_test_backend() {
         let state = HudState::default();
-        let _: fn(HudState) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), Box<dyn std::error::Error>>>>> =
-            |s| Box::pin(run_hud(s));
+        let _: fn(
+            HudState,
+        ) -> std::pin::Pin<
+            Box<dyn std::future::Future<Output = Result<(), Box<dyn std::error::Error>>>>,
+        > = |s| Box::pin(run_hud(s));
         // Verify the state is valid (we don't call run_hud as it requires a real terminal)
         assert_eq!(state.worker_count, 0);
     }

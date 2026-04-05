@@ -294,6 +294,9 @@ mod tests {
         let config = OmxConfig::default();
         let result = gen.generate_agents_md(&config).unwrap();
         assert!(result.contains("# AGENTS"), "must have header");
-        assert!(result.contains("delegation"), "must mention delegation rules");
+        assert!(
+            result.contains("delegation"),
+            "must mention delegation rules"
+        );
     }
 }

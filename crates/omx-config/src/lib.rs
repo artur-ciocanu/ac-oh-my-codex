@@ -167,20 +167,24 @@ impl ConfigLoader for DefaultConfigLoader {
         // Layer 1: config.toml (lowest precedence file source)
         let toml_path = codex_home.join("config.toml");
         if toml_path.exists() {
-            let contents = std::fs::read_to_string(&toml_path)
-                .map_err(|e| OmxError::Config(format!("failed to read {}: {e}", toml_path.display())))?;
-            let toml_config: TomlConfigFile = toml::from_str(&contents)
-                .map_err(|e| OmxError::Config(format!("invalid TOML in {}: {e}", toml_path.display())))?;
+            let contents = std::fs::read_to_string(&toml_path).map_err(|e| {
+                OmxError::Config(format!("failed to read {}: {e}", toml_path.display()))
+            })?;
+            let toml_config: TomlConfigFile = toml::from_str(&contents).map_err(|e| {
+                OmxError::Config(format!("invalid TOML in {}: {e}", toml_path.display()))
+            })?;
             apply_toml(&mut config, &toml_config);
         }
 
         // Layer 2: .omx-config.json (overrides TOML)
         let json_path = codex_home.join(".omx-config.json");
         if json_path.exists() {
-            let contents = std::fs::read_to_string(&json_path)
-                .map_err(|e| OmxError::Config(format!("failed to read {}: {e}", json_path.display())))?;
-            let json_config: JsonConfigFile = serde_json::from_str(&contents)
-                .map_err(|e| OmxError::Config(format!("invalid JSON in {}: {e}", json_path.display())))?;
+            let contents = std::fs::read_to_string(&json_path).map_err(|e| {
+                OmxError::Config(format!("failed to read {}: {e}", json_path.display()))
+            })?;
+            let json_config: JsonConfigFile = serde_json::from_str(&contents).map_err(|e| {
+                OmxError::Config(format!("invalid JSON in {}: {e}", json_path.display()))
+            })?;
             apply_json(&mut config, &json_config);
         }
 
@@ -369,11 +373,13 @@ default_workers = 5
         fs::write(
             tmp.path().join("config.toml"),
             "[models]\nfrontier = \"from-toml\"\n",
-        ).unwrap();
+        )
+        .unwrap();
         fs::write(
             tmp.path().join(".omx-config.json"),
             r#"{"models": {"frontier": "from-json"}}"#,
-        ).unwrap();
+        )
+        .unwrap();
 
         let config = DefaultConfigLoader::load(tmp.path(), &HashMap::new()).unwrap();
         assert_eq!(config.models.frontier, "from-json");
@@ -385,7 +391,8 @@ default_workers = 5
         fs::write(
             tmp.path().join("config.toml"),
             "[models]\nfrontier = \"from-toml\"\n",
-        ).unwrap();
+        )
+        .unwrap();
 
         let mut env = HashMap::new();
         env.insert("OMX_MODEL_FRONTIER".into(), "from-env".into());

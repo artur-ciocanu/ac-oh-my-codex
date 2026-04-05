@@ -32,7 +32,12 @@ pub fn claim(
         )));
     }
 
-    let token = format!("lease-{}-{}-{}", task.0, worker.0, uuid::Uuid::new_v4().simple());
+    let token = format!(
+        "lease-{}-{}-{}",
+        task.0,
+        worker.0,
+        uuid::Uuid::new_v4().simple()
+    );
     Ok(LeaseToken(token))
 }
 
@@ -62,7 +67,11 @@ mod tests {
     fn ready_tasks_returns_pending_with_no_deps() {
         let tasks = vec![
             (TaskId("t1".into()), TaskStatus::Pending, vec![]),
-            (TaskId("t2".into()), TaskStatus::Pending, vec![TaskId("t1".into())]),
+            (
+                TaskId("t2".into()),
+                TaskStatus::Pending,
+                vec![TaskId("t1".into())],
+            ),
             (TaskId("t3".into()), TaskStatus::Completed, vec![]),
         ];
         let ready = ready_tasks(&tasks);
@@ -73,7 +82,11 @@ mod tests {
     fn ready_tasks_unblocks_when_deps_completed() {
         let tasks = vec![
             (TaskId("t1".into()), TaskStatus::Completed, vec![]),
-            (TaskId("t2".into()), TaskStatus::Pending, vec![TaskId("t1".into())]),
+            (
+                TaskId("t2".into()),
+                TaskStatus::Pending,
+                vec![TaskId("t1".into())],
+            ),
         ];
         let ready = ready_tasks(&tasks);
         assert_eq!(ready, vec![TaskId("t2".into())]);
@@ -81,9 +94,7 @@ mod tests {
 
     #[test]
     fn ready_tasks_skips_in_progress() {
-        let tasks = vec![
-            (TaskId("t1".into()), TaskStatus::InProgress, vec![]),
-        ];
+        let tasks = vec![(TaskId("t1".into()), TaskStatus::InProgress, vec![])];
         let ready = ready_tasks(&tasks);
         assert!(ready.is_empty());
     }
@@ -124,12 +135,7 @@ mod tests {
     #[test]
     fn transition_rejects_empty_token() {
         let token = LeaseToken("".into());
-        let result = transition(
-            &TaskId("t1".into()),
-            &token,
-            TaskStatus::Completed,
-            None,
-        );
+        let result = transition(&TaskId("t1".into()), &token, TaskStatus::Completed, None);
         assert!(result.is_err());
     }
 }

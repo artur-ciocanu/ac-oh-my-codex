@@ -63,9 +63,7 @@ impl TraceMcpServer {
     }
 
     fn timeline_path(session_id: &str) -> PathBuf {
-        Path::new("trace")
-            .join(session_id)
-            .join("timeline.jsonl")
+        Path::new("trace").join(session_id).join("timeline.jsonl")
     }
 
     async fn read_timeline(&self, session_id: &str) -> Result<Vec<TimelineEntry>, String> {
@@ -116,7 +114,11 @@ impl TraceMcpServer {
                     }
                 }
                 if let Some(sev) = severity {
-                    let entry_sev = e.extra.get("severity").and_then(|v| v.as_str()).unwrap_or("info");
+                    let entry_sev = e
+                        .extra
+                        .get("severity")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("info");
                     if entry_sev != sev {
                         return false;
                     }
@@ -183,10 +185,7 @@ impl TraceMcpServer {
                 }
 
                 let total_turns = filtered.len();
-                let total_duration_ms: u64 = filtered
-                    .iter()
-                    .filter_map(|e| e.duration_ms)
-                    .sum();
+                let total_duration_ms: u64 = filtered.iter().filter_map(|e| e.duration_ms).sum();
                 let avg_duration_ms = if total_turns > 0 {
                     total_duration_ms / total_turns as u64
                 } else {
