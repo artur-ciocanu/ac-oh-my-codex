@@ -84,9 +84,25 @@ impl SetupGenerator for DefaultSetupGenerator {
 
     fn generate_agent_tomls(
         &self,
-        _agents: &[AgentDefinition],
+        agents: &[AgentDefinition],
     ) -> Result<Vec<(String, String)>, OmxError> {
-        todo!("Phase 4: generate per-agent .toml files")
+        let mut files = Vec::with_capacity(agents.len());
+        for agent in agents {
+            let filename = format!("{}.toml", agent.name);
+            let mut content = String::new();
+            content.push_str(&format!("name = \"{}\"\n", agent.name));
+            content.push_str(&format!("description = \"{}\"\n", agent.description));
+            if let Some(model) = &agent.model {
+                content.push_str(&format!("model = \"{model}\"\n"));
+            }
+            if !agent.tools.is_empty() {
+                let tools_str: Vec<String> =
+                    agent.tools.iter().map(|t| format!("\"{t}\"")).collect();
+                content.push_str(&format!("tools = [{}]\n", tools_str.join(", ")));
+            }
+            files.push((filename, content));
+        }
+        Ok(files)
     }
 
     fn sync_mcp_servers(&self, _config: &OmxConfig, _scope: SetupScope) -> Result<(), OmxError> {
@@ -145,6 +161,32 @@ mod tests {
             result.contains("command = \"omx-mcp-state\""),
             "must use binary name"
         );
+    }
+
+    #[test]
+    fn generate_agent_tomls_produces_files() {
+        let gen = DefaultSetupGenerator;
+        let agents = vec![
+            AgentDefinition {
+                name: "architect".into(),
+                description: "System design agent".into(),
+                model: Some("o3".into()),
+                tools: vec!["read".into(), "write".into()],
+            },
+            AgentDefinition {
+                name: "reviewer".into(),
+                description: "Code review agent".into(),
+                model: None,
+                tools: vec!["read".into()],
+            },
+        ];
+        let result = gen.generate_agent_tomls(&agents).unwrap();
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].0, "architect.toml");
+        assert!(result[0].1.contains("name = \"architect\""));
+        assert!(result[0].1.contains("model = \"o3\""));
+        assert_eq!(result[1].0, "reviewer.toml");
+        assert!(!result[1].1.contains("model ="), "no model when None");
     }
 
     #[test]
