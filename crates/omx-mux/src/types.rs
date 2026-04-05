@@ -9,6 +9,9 @@ pub const MUX_OPERATION_NAMES: &[&str] = &[
     "inspect-liveness",
     "attach",
     "detach",
+    "create-window",
+    "kill-window",
+    "send-keys",
 ];
 pub const MUX_TARGET_KINDS: &[&str] = &["delivery-handle", "detached"];
 
@@ -255,6 +258,17 @@ pub enum MuxOperation {
     Detach {
         target: MuxTarget,
     },
+    CreateWindow {
+        session: String,
+        name: String,
+    },
+    KillWindow {
+        target: String,
+    },
+    SendKeys {
+        target: String,
+        keys: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -266,6 +280,9 @@ pub enum MuxOutcome {
     LivenessChecked { alive: bool },
     Attached { handle: String },
     Detached { handle: String },
+    WindowCreated { handle: String },
+    WindowKilled { handle: String },
+    KeysSent { target: String },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -302,5 +319,14 @@ pub fn describe_operation(operation: &MuxOperation) -> &'static str {
         MuxOperation::InspectLiveness { .. } => "inspect-liveness",
         MuxOperation::Attach { .. } => "attach",
         MuxOperation::Detach { .. } => "detach",
+        MuxOperation::CreateWindow { .. } => "create-window",
+        MuxOperation::KillWindow { .. } => "kill-window",
+        MuxOperation::SendKeys { .. } => "send-keys",
+    }
+}
+
+impl From<MuxError> for omx_types::OmxError {
+    fn from(err: MuxError) -> Self {
+        omx_types::OmxError::Tmux(err.to_string())
     }
 }

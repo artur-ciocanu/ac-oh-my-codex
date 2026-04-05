@@ -21,6 +21,15 @@ impl CliProvider {
     }
 }
 
+impl std::fmt::Display for CliProvider {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Codex => write!(f, "codex"),
+            Self::Claude => write!(f, "claude"),
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Team primitives
 // ---------------------------------------------------------------------------
@@ -50,6 +59,18 @@ pub enum TaskStatus {
     Failed,
 }
 
+impl std::fmt::Display for TaskStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Pending => write!(f, "pending"),
+            Self::Blocked => write!(f, "blocked"),
+            Self::InProgress => write!(f, "in_progress"),
+            Self::Completed => write!(f, "completed"),
+            Self::Failed => write!(f, "failed"),
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Dispatch lifecycle
 // ---------------------------------------------------------------------------
@@ -62,17 +83,78 @@ pub enum DispatchStatus {
     Failed,
 }
 
+impl std::fmt::Display for DispatchStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Pending => write!(f, "pending"),
+            Self::Notified => write!(f, "notified"),
+            Self::Delivered => write!(f, "delivered"),
+            Self::Failed => write!(f, "failed"),
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Team phases
 // ---------------------------------------------------------------------------
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum TeamPhase {
     Plan,
     Prd,
     Exec,
     Verify,
     Fix,
+}
+
+impl std::fmt::Display for TeamPhase {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Plan => write!(f, "plan"),
+            Self::Prd => write!(f, "prd"),
+            Self::Exec => write!(f, "exec"),
+            Self::Verify => write!(f, "verify"),
+            Self::Fix => write!(f, "fix"),
+        }
+    }
+}
+
+impl TeamPhase {
+    pub fn ordinal(&self) -> u8 {
+        match self {
+            Self::Plan => 0,
+            Self::Prd => 1,
+            Self::Exec => 2,
+            Self::Verify => 3,
+            Self::Fix => 4,
+        }
+    }
+
+    pub fn next(&self) -> Option<Self> {
+        match self {
+            Self::Plan => Some(Self::Prd),
+            Self::Prd => Some(Self::Exec),
+            Self::Exec => Some(Self::Verify),
+            Self::Verify => Some(Self::Fix),
+            Self::Fix => None,
+        }
+    }
+
+    pub const ALL: &'static [TeamPhase] = &[
+        Self::Plan, Self::Prd, Self::Exec, Self::Verify, Self::Fix,
+    ];
+}
+
+impl PartialOrd for TeamPhase {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for TeamPhase {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.ordinal().cmp(&other.ordinal())
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -104,6 +186,27 @@ pub enum HookEventName {
     TestStarted,
     TestFinished,
     TestFailed,
+}
+
+impl std::fmt::Display for HookEventName {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let name = match self {
+            Self::SessionStart => "session_start",
+            Self::SessionEnd => "session_end",
+            Self::SessionIdle => "session_idle",
+            Self::TurnComplete => "turn_complete",
+            Self::Blocked => "blocked",
+            Self::Finished => "finished",
+            Self::Failed => "failed",
+            Self::PreToolUse => "pre_tool_use",
+            Self::PostToolUse => "post_tool_use",
+            Self::PrCreated => "pr_created",
+            Self::TestStarted => "test_started",
+            Self::TestFinished => "test_finished",
+            Self::TestFailed => "test_failed",
+        };
+        write!(f, "{name}")
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -187,9 +290,29 @@ mod tests {
         assert_eq!(err.to_string(), "config error: missing field");
     }
 
-    #[ignore]
     #[test]
-    fn team_phase_ordering_placeholder() {
-        // Phase 1: implement phase ordering logic
+    fn team_phase_ordering() {
+        assert!(TeamPhase::Plan < TeamPhase::Exec);
+        assert!(TeamPhase::Exec < TeamPhase::Verify);
+        assert_eq!(TeamPhase::Plan.ordinal(), 0);
+        assert_eq!(TeamPhase::Fix.ordinal(), 4);
+        assert_eq!(TeamPhase::Exec.next(), Some(TeamPhase::Verify));
+        assert_eq!(TeamPhase::Fix.next(), None);
+    }
+
+    #[test]
+    fn team_phase_all_is_sorted_by_ordinal() {
+        for window in TeamPhase::ALL.windows(2) {
+            assert!(window[0] < window[1]);
+        }
+    }
+
+    #[test]
+    fn display_impls_produce_lowercase_labels() {
+        assert_eq!(CliProvider::Codex.to_string(), "codex");
+        assert_eq!(TaskStatus::InProgress.to_string(), "in_progress");
+        assert_eq!(DispatchStatus::Delivered.to_string(), "delivered");
+        assert_eq!(TeamPhase::Verify.to_string(), "verify");
+        assert_eq!(HookEventName::SessionStart.to_string(), "session_start");
     }
 }

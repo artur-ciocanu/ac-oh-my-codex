@@ -30,6 +30,9 @@ mod tests {
                 "inspect-liveness",
                 "attach",
                 "detach",
+                "create-window",
+                "kill-window",
+                "send-keys",
             ]
         );
         assert_eq!(MUX_TARGET_KINDS, &["delivery-handle", "detached"]);
@@ -87,5 +90,33 @@ mod tests {
         let json = serde_json::to_string(&err).expect("serialize");
         let deserialized: MuxError = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(deserialized, err);
+    }
+
+    #[test]
+    fn serde_roundtrip_create_window() {
+        let op = MuxOperation::CreateWindow {
+            session: "omx-team-dev".into(),
+            name: "worker-1".into(),
+        };
+        let json = serde_json::to_string(&op).expect("serialize");
+        let deserialized: MuxOperation = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(format!("{deserialized:?}"), format!("{op:?}"));
+    }
+
+    #[test]
+    fn serde_roundtrip_window_created_outcome() {
+        let outcome = MuxOutcome::WindowCreated {
+            handle: "omx-team-dev:1".into(),
+        };
+        let json = serde_json::to_string(&outcome).expect("serialize");
+        let deserialized: MuxOutcome = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(deserialized, outcome);
+    }
+
+    #[test]
+    fn mux_error_converts_to_omx_error() {
+        let mux_err = MuxError::AdapterFailed("tmux not found".into());
+        let omx_err: omx_types::OmxError = mux_err.into();
+        assert!(omx_err.to_string().contains("tmux"));
     }
 }
