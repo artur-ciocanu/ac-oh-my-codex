@@ -1,5 +1,11 @@
+use std::sync::Arc;
+
 use rmcp::{tool, ServerHandler, ServiceExt};
 use serde::Deserialize;
+
+#[allow(dead_code)]
+mod lsp;
+use lsp::LspClientManager;
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct DiagnosticsParams {
@@ -28,8 +34,17 @@ pub struct AstGrepReplaceParams {
     pub dry_run: Option<bool>,
 }
 
-#[derive(Debug, Clone)]
-struct CodeIntelMcpServer;
+#[derive(Clone)]
+struct CodeIntelMcpServer {
+    #[allow(dead_code)]
+    lsp_manager: Arc<LspClientManager>,
+}
+
+impl std::fmt::Debug for CodeIntelMcpServer {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CodeIntelMcpServer").finish()
+    }
+}
 
 #[rmcp::tool(tool_box)]
 impl CodeIntelMcpServer {
@@ -205,9 +220,10 @@ impl ServerHandler for CodeIntelMcpServer {}
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt::init();
-    let service = CodeIntelMcpServer
-        .serve(rmcp::transport::io::stdio())
-        .await?;
+    let server = CodeIntelMcpServer {
+        lsp_manager: Arc::new(LspClientManager::new()),
+    };
+    let service = server.serve(rmcp::transport::io::stdio()).await?;
     service.waiting().await?;
     Ok(())
 }
