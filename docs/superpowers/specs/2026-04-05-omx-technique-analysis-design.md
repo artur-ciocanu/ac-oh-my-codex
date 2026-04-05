@@ -609,3 +609,93 @@ Six structural extension points the architecture already implies.
 | D3. Allowlist Sandbox | explore | — | omx-explore |
 | D4. MCP Fleet | All (via tool access) | — | omx-mcp-* |
 | D5. Cascading Config | — | — | omx-config |
+
+---
+
+## Part 5: OMX as Reinvented Knowledge Engineering
+
+A comparison with CommonKADS and Problem-Solving Methods (PSMs) reveals that OMX has independently reinvented — and in several cases surpassed — classical Knowledge Engineering patterns that took the academic community 15 years to formalize. The structural parallels are not superficial; they go to the core of how knowledge, tasks, and inference are modeled.
+
+### The Constraint Skeleton IS a Problem-Solving Method
+
+The single most striking finding: OMX's 7-section constraint skeleton (`identity` → `scope_guard` → `ask_gate` → `execution_loop` → `verification_loop` → `anti_patterns` → `final_checklist`) is structurally a PSM expressed in natural language rather than formal notation.
+
+In classical PSM terms:
+- **`identity`** = the PSM's **task type declaration** — what class of problem this method solves (diagnosis, design, classification)
+- **`scope_guard`** = **assumptions and competence boundaries** — what the PSM requires to be true about the domain and what it explicitly cannot handle (Fensel's "bridge assumptions")
+- **`ask_gate`** = **knowledge role specification** — what inputs the method needs and under what conditions it must acquire them (CommonKADS inference layer's input roles)
+- **`execution_loop`** = **inference structure** — the ordered sequence of primitive inference steps operating over knowledge roles (the core of any PSM)
+- **`verification_loop`** = **meta-inference** — reasoning about the quality of the primary inference output (no direct classical analog — see "Where OMX Goes Beyond" below)
+- **`anti_patterns`** = **negative examples / constraint violations** — what the PSM must NOT produce (related to Fensel's "assumptions" but more operationally concrete)
+- **`final_checklist`** = **output role validation** — confirming the output satisfies the task specification before delivery
+
+This isn't a loose analogy. The constraint skeleton defines reusable inference patterns that are domain-independent (the same skeleton works for executor, critic, architect, debugger), separates task knowledge from domain knowledge (the skeleton structure vs. the role-specific content), and uses knowledge roles (inputs, outputs, intermediate artifacts) — the three defining characteristics of a PSM.
+
+### Direct Structural Mappings
+
+| CommonKADS / PSM Concept | OMX Equivalent | How OMX Differs |
+|---|---|---|
+| **Organization Model** (actors, roles, functions) | `AGENTS.md` + `catalog-manifest.json` (agent definitions, routing roles, categories) | OMX adds **dynamic scaling** — CommonKADS assumes static agent assignment |
+| **Task Model** (hierarchical decomposition) | Pipeline stages + skill SKILL.md contracts (ralplan → team-exec → ralph-verify) | OMX tasks are **resumable** — pipeline supports crash recovery and resume from last stage |
+| **Agent Model** (who can do what) | `AgentDefinition` interface (name, posture, modelClass, routingRole, tools) | OMX adds the **posture × model class** composition — 3 orthogonal dimensions vs. KADS' flat capability list |
+| **Knowledge Model — Domain layer** | System prompts + `<identity>` sections (domain knowledge embedded in role prompts) | OMX embeds domain knowledge in natural language rather than formal ontologies — fits the LLM paradigm |
+| **Knowledge Model — Inference layer** | Constraint skeleton sections `<execution_loop>` + `<verification_loop>` (the reasoning steps) | OMX inference steps are **tool-backed** — every inference must produce tool output, not just logical conclusions |
+| **Knowledge Model — Task layer** | Skill control flow (e.g., ralph's 7-phase state machine, autopilot's 6 phases) | OMX adds **circuit breakers** — classical PSMs have no built-in loop termination |
+| **Communication Model** | State-first dispatch (`.omx/state/` files + tmux fallback) | OMX's communication is **asynchronous and durable** — classical KADS assumed synchronous dialogue |
+| **Design Model** | Dual-layer architecture (TS orchestration + Rust persistence) | OMX explicitly separates "fast to change" (prompts) from "must be correct" (state management) |
+| **MAS-CommonKADS Coordination Model** | Team orchestration (phase progression, claim-safe tasks, allocation policy) | OMX adds **lease-based fault tolerance** — expired leases auto-release, no stuck tasks |
+
+### PSM Pattern Correspondences
+
+| Classical PSM | OMX Instantiation | Key Innovation |
+|---|---|---|
+| **Heuristic Classification** (abstract → match → refine) | Keyword detector → role router → posture selection. Raw user input is abstracted to keywords, matched to agent roles, refined to specific posture+model config | OMX makes the abstraction step **pattern-based** (47 keywords with priority) rather than requiring a domain ontology |
+| **Propose-Critique-Modify** | Ralplan consensus loop: Planner proposes → Architect critiques → Critic validates → iterate until consensus (max 5 rounds) | OMX adds a **third role** (Critic does simulation-based validation, not just review) and a **hard iteration cap** |
+| **Systematic Diagnosis / Cover-and-Differentiate** | Debugger prompt: generate hypotheses → gather evidence → rank by evidence strength → pursue top-ranked → circuit breaker at 3 failures | OMX adds **evidence-ranking over plausibility-ranking** — classical cover-and-differentiate doesn't specify a ranking criterion |
+| **Skeletal Plan Refinement** | Plan skill's 4-mode auto-detection: selects a plan template (interview/direct/consensus/review) then refines based on task signals | OMX makes template **selection automatic** via signal detection rather than engineer choice |
+| **Chandrasekaran's Generic Tasks** | Agent catalog with 30+ role definitions, each a composable building block | OMX roles are **prompt-defined** (changeable without recompilation) vs. Chandrasekaran's code-defined generic tasks |
+
+### Where OMX Goes Beyond Classical KE
+
+**Anti-Hallucination as a First-Class Concern.** Classical KE never had to deal with its inference engine *making things up*. Symbolic systems either derive a conclusion from rules or don't. OMX's "Evidence Over Plausibility" principle (technique B5), deslop enforcement (B3), and mandatory `file:line` citations have no classical analog because the problem didn't exist. This is OMX's most genuinely novel contribution — structural defenses against a failure mode that classical KE couldn't anticipate.
+
+**Circuit Breakers.** Classical PSMs describe iteration (propose-critique-modify loops, hypothesis refinement cycles) but never specify termination conditions for degenerate cases. What happens when cover-and-differentiate generates hypotheses that all fail? The classical answer is: the engineer notices. OMX's answer is: the system stops at N failures and escalates. This is borrowed from distributed systems engineering (Hystrix, resilience4j), not from KE.
+
+**Self-Correction (Deslop).** Classical KE assumes the knowledge engineer produces clean output. OMX assumes the LLM produces noisy output and builds in a mandatory cleanup pass. The deslop enforcement technique — review your own output for AI-isms, then re-verify — is a meta-cognitive pattern that classical systems never needed because symbolic systems don't add unnecessary comments to their conclusions.
+
+**Dynamic Composition at Runtime.** CommonKADS agent models are designed at specification time. OMX's posture × model class composition happens at dispatch time — the same agent role can be instantiated with different behavioral parameters based on runtime conditions. This is closer to runtime polymorphism than to KADS' static modeling.
+
+**Infrastructure-Free Coordination.** MAS-CommonKADS assumed FIPA-compliant agent communication infrastructure (ACL messages, directory facilitators, interaction protocols). OMX achieves equivalent coordination with atomic file writes and lease tokens — zero infrastructure dependencies. This makes the system dramatically simpler to deploy and debug.
+
+### Where Classical KE Has Advantages OMX Lacks
+
+**Formal Verification.** CommonKADS knowledge models can be formally verified for completeness and consistency. OMX's natural-language prompts cannot — you can't prove that a constraint skeleton prevents all failure modes. Classical KE's formal rigor is genuinely valuable for safety-critical systems.
+
+**Systematic Knowledge Reuse.** Classical PSMs have the formal **knowledge role** abstraction that makes cross-domain reuse systematic — the same heuristic classification PSM works for medical diagnosis, mineral identification, and help-desk troubleshooting. OMX's techniques are reusable in principle but embed domain assumptions that require manual extraction to port.
+
+**The Knowledge Level.** Allen Newell's "knowledge level" — describing agent behavior in terms of goals and knowledge independently of implementation — is missing from OMX. OMX jumps from high-level philosophy (Part 1) to implementation patterns (Part 2) without a principled intermediate layer that says: "this agent needs to *know* X and be able to *infer* Y, regardless of how we implement it."
+
+**Principled Knowledge Acquisition.** CommonKADS has a structured methodology for knowledge elicitation (protocol analysis, repertory grids, card sorting, structured interviews). OMX's "Explore First, Ask Last" is effective for code-domain tasks but doesn't generalize to domains where knowledge lives in experts' heads.
+
+### The Meta-Insight
+
+The LLM agent community is reinventing classical KE, but with crucial adaptations the KE community never anticipated. The Allen et al. (2023) TGDK paper and the MAKE 2026 AAAI symposium (April 7-9, 2026) are starting to bridge this gap academically, but OMX is — perhaps unknowingly — one of the most complete practical instantiations of this bridge.
+
+This reveals a two-way opportunity:
+1. **OMX → KE:** OMX could be formalized using CommonKADS vocabulary, making its patterns more discoverable, teachable, and comparable to other systems
+2. **KE → OMX:** CommonKADS could be updated with OMX's LLM-specific innovations (evidence requirements, circuit breakers, deslop) to become relevant to modern agent engineering
+
+### Key References (2024-2026)
+
+- Allen, Stork & Groth — *Knowledge Engineering using LLMs* (TGDK, 2023)
+- Liu et al. — *Cognitive Models as Templates for Language Agents* (arXiv, Feb 2026)
+- Wray, Kirk & Laird — *Cognitive Design Patterns for LLM Agents* (AGI-25, May 2025)
+- Cai et al. — *Design Patterns for LLM-based MAS* (arXiv, 2025)
+- EMAS 2025 — *Towards Engineering LLM-Enhanced Multi-Agent Systems*
+- MAKE 2026 — AAAI Spring Symposium on ML + KE for Semantic Agents (April 7-9, 2026)
+- Tiddi et al. — *HI-CommonKADS* (KCAP 2023, HHAI 2024)
+- van Harmelen — *Knowledge Engineering Rediscovered* (KCAP, 2009)
+- Clancey — *Heuristic Classification* (Artificial Intelligence, 1985)
+- Fensel, Benjamins, Studer — *Knowledge Engineering: Principles and Methods* (DKE, 1998)
+- Chandrasekaran — *Generic Tasks as Building Blocks* (IEEE Expert, 1986)
+- Iglesias et al. — *MAS-CommonKADS* (IWMAS, 1997)
