@@ -42,10 +42,28 @@ pub struct DefaultSetupGenerator;
 impl SetupGenerator for DefaultSetupGenerator {
     fn generate_config_toml(
         &self,
-        _config: &OmxConfig,
+        config: &OmxConfig,
         _scope: SetupScope,
     ) -> Result<String, OmxError> {
-        todo!("Phase 4: generate config.toml with OMX:START/OMX:END markers")
+        let mut out = String::new();
+        out.push_str("# OMX:START — managed by omx setup, do not edit\n\n");
+        out.push_str(&format!("model = \"{}\"\n\n", config.models.frontier));
+        let servers = [
+            ("omx_state", "omx-mcp-state"),
+            ("omx_memory", "omx-mcp-memory"),
+            ("omx_code_intel", "omx-mcp-code-intel"),
+            ("omx_trace", "omx-mcp-trace"),
+            ("omx_team", "omx-mcp-team"),
+        ];
+        for (name, binary) in servers {
+            out.push_str(&format!("[mcp_servers.{name}]\n"));
+            out.push_str(&format!("command = \"{binary}\"\n"));
+            out.push_str("args = []\n");
+            out.push_str("enabled = true\n");
+            out.push_str("startup_timeout_sec = 5\n\n");
+        }
+        out.push_str("# OMX:END\n");
+        Ok(out)
     }
 
     fn generate_agents_md(&self, _config: &OmxConfig) -> Result<String, OmxError> {
@@ -84,10 +102,37 @@ mod tests {
         assert_eq!(parsed, scope);
     }
 
-    #[ignore]
     #[test]
-    fn generate_config_toml_placeholder() {
-        // Phase 4: test config.toml generation with markers
+    fn generate_config_toml_has_markers_and_mcp_entries() {
+        let gen = DefaultSetupGenerator;
+        let config = OmxConfig::default();
+        let result = gen.generate_config_toml(&config, SetupScope::User).unwrap();
+        assert!(result.contains("# OMX:START"), "must have start marker");
+        assert!(result.contains("# OMX:END"), "must have end marker");
+        assert!(
+            result.contains("[mcp_servers.omx_state]"),
+            "must register omx-mcp-state"
+        );
+        assert!(
+            result.contains("[mcp_servers.omx_memory]"),
+            "must register omx-mcp-memory"
+        );
+        assert!(
+            result.contains("[mcp_servers.omx_code_intel]"),
+            "must register omx-mcp-code-intel"
+        );
+        assert!(
+            result.contains("[mcp_servers.omx_trace]"),
+            "must register omx-mcp-trace"
+        );
+        assert!(
+            result.contains("[mcp_servers.omx_team]"),
+            "must register omx-mcp-team"
+        );
+        assert!(
+            result.contains("command = \"omx-mcp-state\""),
+            "must use binary name"
+        );
     }
 
     #[ignore]
