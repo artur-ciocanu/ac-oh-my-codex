@@ -17,6 +17,7 @@ pub struct OmxConfig {
     pub features: FeatureFlags,
     pub agents: AgentsConfig,
     pub env: HashMap<String, String>,
+    pub env_per_mode: HashMap<String, HashMap<String, String>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -94,6 +95,7 @@ impl Default for OmxConfig {
             features: FeatureFlags::default(),
             agents: AgentsConfig::default(),
             env: HashMap::new(),
+            env_per_mode: HashMap::new(),
         }
     }
 }
@@ -139,6 +141,8 @@ struct TomlConfigFile {
     pub features: Option<FeatureFlags>,
     #[serde(default)]
     pub agents: Option<AgentsConfig>,
+    #[serde(default)]
+    pub env_per_mode: Option<HashMap<String, HashMap<String, String>>>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -175,6 +179,8 @@ struct JsonConfigFile {
     pub features: Option<FeatureFlags>,
     #[serde(default)]
     pub agents: Option<AgentsConfig>,
+    #[serde(default)]
+    pub env_per_mode: Option<HashMap<String, HashMap<String, String>>>,
 }
 
 // ---------------------------------------------------------------------------
@@ -271,6 +277,9 @@ fn apply_toml(config: &mut OmxConfig, toml: &TomlConfigFile) {
     if let Some(ref agents) = toml.agents {
         config.agents = agents.clone();
     }
+    if let Some(ref env_per_mode) = toml.env_per_mode {
+        config.env_per_mode = env_per_mode.clone();
+    }
 }
 
 fn apply_json(config: &mut OmxConfig, json: &JsonConfigFile) {
@@ -310,6 +319,9 @@ fn apply_json(config: &mut OmxConfig, json: &JsonConfigFile) {
     }
     if let Some(ref agents) = json.agents {
         config.agents = agents.clone();
+    }
+    if let Some(ref env_per_mode) = json.env_per_mode {
+        config.env_per_mode = env_per_mode.clone();
     }
 }
 
@@ -562,6 +574,30 @@ model = "o4-mini"
             architect.description.as_deref(),
             Some("System design agent")
         );
+    }
+
+    #[test]
+    fn env_per_mode_default_is_empty() {
+        let config = OmxConfig::default();
+        assert!(config.env_per_mode.is_empty());
+    }
+
+    #[test]
+    fn load_reads_env_per_mode_from_toml() {
+        let tmp = tempfile::tempdir().unwrap();
+        let toml_content = r#"
+[env_per_mode.autopilot]
+MAX_TURNS = "50"
+VERBOSE = "true"
+
+[env_per_mode.team]
+MAX_TURNS = "100"
+"#;
+        fs::write(tmp.path().join("config.toml"), toml_content).unwrap();
+        let config = DefaultConfigLoader::load(tmp.path(), &HashMap::new()).unwrap();
+        assert_eq!(config.env_per_mode.len(), 2);
+        assert_eq!(config.env_per_mode["autopilot"]["MAX_TURNS"], "50");
+        assert_eq!(config.env_per_mode["team"]["MAX_TURNS"], "100");
     }
 
     #[test]
