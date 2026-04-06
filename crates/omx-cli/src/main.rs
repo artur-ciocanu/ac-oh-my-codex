@@ -181,6 +181,12 @@ enum HooksAction {
 }
 
 #[derive(Debug, Subcommand)]
+enum SessionAction {
+    List,
+    Show { session_id: String },
+}
+
+#[derive(Debug, Subcommand)]
 enum HookApiAction {
     /// Send tmux keys
     TmuxSendKeys {
