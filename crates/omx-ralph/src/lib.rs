@@ -2,7 +2,7 @@
 
 use omx_types::OmxError;
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -236,6 +236,83 @@ pub fn validate_ralph_state(candidate: &serde_json::Value) -> RalphStateValidati
         warning: None,
         error: None,
     }
+}
+
+// ---------------------------------------------------------------------------
+// Canonical artifacts and visual feedback
+// ---------------------------------------------------------------------------
+
+fn state_dir(cwd: &Path, session_id: Option<&str>) -> PathBuf {
+    let base = cwd.join(".omx").join("state");
+    match session_id {
+        Some(sid) => base.join(sid),
+        None => base,
+    }
+}
+
+/// Ensure canonical artifact directories and progress ledger exist.
+///
+/// Creates `.omx/plans/` and the state directory. If `ralph-progress.json`
+/// does not exist, writes an empty ledger. Idempotent.
+pub async fn ensure_canonical_artifacts(
+    cwd: &Path,
+    session_id: Option<&str>,
+) -> Result<RalphCanonicalArtifacts, OmxError> {
+    let plans_dir = cwd.join(".omx").join("plans");
+    let state = state_dir(cwd, session_id);
+
+    tokio::fs::create_dir_all(&plans_dir).await?;
+    tokio::fs::create_dir_all(&state).await?;
+
+    let progress_path = state.join("ralph-progress.json");
+    if !progress_path.exists() {
+        let ledger = RalphProgressLedger::new();
+        let json = serde_json::to_string_pretty(&ledger)?;
+        tokio::fs::write(&progress_path, json).await?;
+    }
+
+    Ok(RalphCanonicalArtifacts {
+        canonical_prd_path: Some(plans_dir),
+        canonical_progress_path: progress_path,
+    })
+}
+
+/// Record visual feedback into the progress ledger.
+///
+/// Reads the existing ledger (or creates an empty one on parse failure),
+/// appends the feedback, caps at [`VISUAL_FEEDBACK_MAX_ENTRIES`], updates
+/// the `updated_at` timestamp, and writes back.
+pub async fn record_visual_feedback(
+    cwd: &Path,
+    feedback: RalphVisualFeedback,
+    session_id: Option<&str>,
+) -> Result<(), OmxError> {
+    let state = state_dir(cwd, session_id);
+    let progress_path = state.join("ralph-progress.json");
+
+    let mut ledger = if progress_path.exists() {
+        let data = tokio::fs::read_to_string(&progress_path).await?;
+        serde_json::from_str::<RalphProgressLedger>(&data)
+            .unwrap_or_else(|_| RalphProgressLedger::new())
+    } else {
+        tokio::fs::create_dir_all(&state).await?;
+        RalphProgressLedger::new()
+    };
+
+    ledger.visual_feedback.push(feedback);
+
+    // Cap at max entries, keeping the most recent
+    if ledger.visual_feedback.len() > VISUAL_FEEDBACK_MAX_ENTRIES {
+        let excess = ledger.visual_feedback.len() - VISUAL_FEEDBACK_MAX_ENTRIES;
+        ledger.visual_feedback.drain(..excess);
+    }
+
+    ledger.updated_at = Some(chrono::Utc::now().to_rfc3339());
+
+    let json = serde_json::to_string_pretty(&ledger)?;
+    tokio::fs::write(&progress_path, json).await?;
+
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
@@ -517,5 +594,99 @@ mod tests {
         let result = validate_ralph_state(&state);
         assert!(!result.ok);
         assert!(result.error.as_deref().unwrap().contains("unknown phase"));
+    }
+
+    // -- ensure_canonical_artifacts --
+
+    #[tokio::test]
+    async fn ensure_canonical_artifacts_creates_dirs_and_ledger() {
+        let tmp = tempfile::tempdir().unwrap();
+        let arts = ensure_canonical_artifacts(tmp.path(), None).await.unwrap();
+
+        assert!(tmp.path().join(".omx/plans").is_dir());
+        assert!(tmp.path().join(".omx/state").is_dir());
+        assert!(arts.canonical_progress_path.exists());
+
+        let data = tokio::fs::read_to_string(&arts.canonical_progress_path)
+            .await
+            .unwrap();
+        let ledger: RalphProgressLedger = serde_json::from_str(&data).unwrap();
+        assert_eq!(ledger.schema_version, 2);
+        assert!(ledger.entries.is_empty());
+    }
+
+    #[tokio::test]
+    async fn ensure_canonical_artifacts_is_idempotent() {
+        let tmp = tempfile::tempdir().unwrap();
+        let arts1 = ensure_canonical_artifacts(tmp.path(), None).await.unwrap();
+        let arts2 = ensure_canonical_artifacts(tmp.path(), None).await.unwrap();
+        assert_eq!(arts1.canonical_progress_path, arts2.canonical_progress_path);
+    }
+
+    #[tokio::test]
+    async fn ensure_canonical_artifacts_with_session_id() {
+        let tmp = tempfile::tempdir().unwrap();
+        let arts = ensure_canonical_artifacts(tmp.path(), Some("sess-42"))
+            .await
+            .unwrap();
+        assert!(tmp.path().join(".omx/state/sess-42").is_dir());
+        assert!(arts
+            .canonical_progress_path
+            .ends_with("sess-42/ralph-progress.json"));
+    }
+
+    // -- record_visual_feedback --
+
+    #[tokio::test]
+    async fn record_visual_feedback_appends_to_ledger() {
+        let tmp = tempfile::tempdir().unwrap();
+        ensure_canonical_artifacts(tmp.path(), None).await.unwrap();
+
+        let fb = RalphVisualFeedback {
+            score: 92.0,
+            verdict: VisualVerdictStatus::Pass,
+            category_match: true,
+            differences: vec![],
+            suggestions: vec![],
+            reasoning: None,
+            threshold: None,
+        };
+        record_visual_feedback(tmp.path(), fb, None).await.unwrap();
+
+        let data = tokio::fs::read_to_string(tmp.path().join(".omx/state/ralph-progress.json"))
+            .await
+            .unwrap();
+        let ledger: RalphProgressLedger = serde_json::from_str(&data).unwrap();
+        assert_eq!(ledger.visual_feedback.len(), 1);
+        assert!((ledger.visual_feedback[0].score - 92.0).abs() < f64::EPSILON);
+        assert!(ledger.updated_at.is_some());
+    }
+
+    #[tokio::test]
+    async fn record_visual_feedback_caps_at_max_entries() {
+        let tmp = tempfile::tempdir().unwrap();
+        ensure_canonical_artifacts(tmp.path(), None).await.unwrap();
+
+        // Write 35 entries
+        for i in 0..35 {
+            let fb = RalphVisualFeedback {
+                score: i as f64,
+                verdict: VisualVerdictStatus::Pass,
+                category_match: true,
+                differences: vec![],
+                suggestions: vec![],
+                reasoning: None,
+                threshold: None,
+            };
+            record_visual_feedback(tmp.path(), fb, None).await.unwrap();
+        }
+
+        let data = tokio::fs::read_to_string(tmp.path().join(".omx/state/ralph-progress.json"))
+            .await
+            .unwrap();
+        let ledger: RalphProgressLedger = serde_json::from_str(&data).unwrap();
+        assert_eq!(ledger.visual_feedback.len(), VISUAL_FEEDBACK_MAX_ENTRIES);
+        // The oldest entries (0..5) should have been dropped, first remaining = 5.0
+        assert!((ledger.visual_feedback[0].score - 5.0).abs() < f64::EPSILON);
     }
 }
