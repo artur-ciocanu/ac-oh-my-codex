@@ -120,12 +120,252 @@ pub struct RalphVerifyDescriptor {
 }
 
 // ---------------------------------------------------------------------------
+// Pipeline orchestrator
+// ---------------------------------------------------------------------------
+
+pub struct PipelineConfig {
+    pub name: String,
+    pub task: String,
+    pub stages: Vec<Box<dyn PipelineStage>>,
+    pub cwd: Option<PathBuf>,
+    pub session_id: Option<String>,
+    pub max_ralph_iterations: Option<u32>,
+    pub worker_count: Option<u32>,
+    pub agent_type: Option<String>,
+    pub on_stage_transition: Option<Box<dyn Fn(&str, &StageContext) + Send + Sync>>,
+}
+
+fn validate_config(config: &PipelineConfig) -> Result<(), omx_types::OmxError> {
+    use std::collections::HashSet;
+
+    if config.name.is_empty() {
+        return Err(omx_types::OmxError::Pipeline(
+            "pipeline name must not be empty".into(),
+        ));
+    }
+    if config.task.is_empty() {
+        return Err(omx_types::OmxError::Pipeline(
+            "pipeline task must not be empty".into(),
+        ));
+    }
+    if config.stages.is_empty() {
+        return Err(omx_types::OmxError::Pipeline(
+            "pipeline must have at least one stage".into(),
+        ));
+    }
+    if let Some(max) = config.max_ralph_iterations {
+        if max == 0 {
+            return Err(omx_types::OmxError::Pipeline(
+                "max_ralph_iterations must be positive".into(),
+            ));
+        }
+    }
+    if let Some(wc) = config.worker_count {
+        if wc == 0 {
+            return Err(omx_types::OmxError::Pipeline(
+                "worker_count must be positive".into(),
+            ));
+        }
+    }
+
+    let mut seen = HashSet::new();
+    for stage in &config.stages {
+        if !seen.insert(stage.name().to_string()) {
+            return Err(omx_types::OmxError::Pipeline(format!(
+                "duplicate stage name: {}",
+                stage.name()
+            )));
+        }
+    }
+
+    Ok(())
+}
+
+pub async fn run_pipeline(config: PipelineConfig) -> Result<PipelineResult, omx_types::OmxError> {
+    validate_config(&config)?;
+
+    let start = std::time::Instant::now();
+    let cwd = config.cwd.clone().unwrap_or_else(|| PathBuf::from("."));
+    let mut all_artifacts: HashMap<String, serde_json::Value> = HashMap::new();
+    let mut stage_results: HashMap<String, StageResult> = HashMap::new();
+    let mut previous_result: Option<StageResult> = None;
+
+    for stage in &config.stages {
+        let ctx = StageContext {
+            task: config.task.clone(),
+            artifacts: all_artifacts.clone(),
+            previous_stage_result: previous_result.clone(),
+            cwd: cwd.clone(),
+            session_id: config.session_id.clone(),
+        };
+
+        if let Some(ref cb) = config.on_stage_transition {
+            cb(stage.name(), &ctx);
+        }
+
+        if stage.can_skip(&ctx) {
+            let result = StageResult {
+                status: StageStatus::Skipped,
+                artifacts: HashMap::new(),
+                duration_ms: 0,
+                error: None,
+            };
+            stage_results.insert(stage.name().to_string(), result.clone());
+            previous_result = Some(result);
+            continue;
+        }
+
+        let stage_start = std::time::Instant::now();
+        let result = match stage.run(&ctx).await {
+            Ok(r) => r,
+            Err(e) => StageResult {
+                status: StageStatus::Failed,
+                artifacts: HashMap::new(),
+                duration_ms: stage_start.elapsed().as_millis() as u64,
+                error: Some(e.to_string()),
+            },
+        };
+
+        // Merge artifacts keyed by stage name
+        for (k, v) in &result.artifacts {
+            all_artifacts.insert(format!("{}:{}", stage.name(), k), v.clone());
+        }
+
+        let is_failed = result.status == StageStatus::Failed;
+        stage_results.insert(stage.name().to_string(), result.clone());
+        previous_result = Some(result);
+
+        if is_failed {
+            return Ok(PipelineResult {
+                status: PipelineStatus::Failed,
+                stage_results,
+                duration_ms: start.elapsed().as_millis() as u64,
+                artifacts: all_artifacts,
+                error: previous_result.as_ref().and_then(|r| r.error.clone()),
+                failed_stage: Some(stage.name().to_string()),
+            });
+        }
+    }
+
+    Ok(PipelineResult {
+        status: PipelineStatus::Completed,
+        stage_results,
+        duration_ms: start.elapsed().as_millis() as u64,
+        artifacts: all_artifacts,
+        error: None,
+        failed_stage: None,
+    })
+}
+
+pub fn can_resume_pipeline(state: &Option<PipelineModeStateExtension>) -> bool {
+    match state {
+        Some(ext) => ext.pipeline_stage_index < ext.pipeline_stages.len(),
+        None => false,
+    }
+}
+
+pub async fn cancel_pipeline() -> Result<(), omx_types::OmxError> {
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // -- Mock stages --
+
+    struct PassStage {
+        stage_name: String,
+    }
+
+    #[async_trait::async_trait]
+    impl PipelineStage for PassStage {
+        fn name(&self) -> &str {
+            &self.stage_name
+        }
+
+        async fn run(&self, _ctx: &StageContext) -> Result<StageResult, omx_types::OmxError> {
+            let mut artifacts = HashMap::new();
+            artifacts.insert(
+                format!("{}-output", self.stage_name),
+                serde_json::json!("ok"),
+            );
+            Ok(StageResult {
+                status: StageStatus::Completed,
+                artifacts,
+                duration_ms: 1,
+                error: None,
+            })
+        }
+    }
+
+    struct FailStage;
+
+    #[async_trait::async_trait]
+    impl PipelineStage for FailStage {
+        fn name(&self) -> &str {
+            "fail"
+        }
+
+        async fn run(&self, _ctx: &StageContext) -> Result<StageResult, omx_types::OmxError> {
+            Ok(StageResult {
+                status: StageStatus::Failed,
+                artifacts: HashMap::new(),
+                duration_ms: 1,
+                error: Some("something broke".into()),
+            })
+        }
+    }
+
+    struct SkippableStage;
+
+    #[async_trait::async_trait]
+    impl PipelineStage for SkippableStage {
+        fn name(&self) -> &str {
+            "skippable"
+        }
+
+        fn can_skip(&self, _ctx: &StageContext) -> bool {
+            true
+        }
+
+        async fn run(&self, _ctx: &StageContext) -> Result<StageResult, omx_types::OmxError> {
+            unreachable!("skippable stage should not be run")
+        }
+    }
+
+    struct ErrorStage;
+
+    #[async_trait::async_trait]
+    impl PipelineStage for ErrorStage {
+        fn name(&self) -> &str {
+            "error"
+        }
+
+        async fn run(&self, _ctx: &StageContext) -> Result<StageResult, omx_types::OmxError> {
+            Err(omx_types::OmxError::Pipeline("stage panicked".into()))
+        }
+    }
+
+    fn make_config(stages: Vec<Box<dyn PipelineStage>>) -> PipelineConfig {
+        PipelineConfig {
+            name: "test".into(),
+            task: "do something".into(),
+            stages,
+            cwd: None,
+            session_id: None,
+            max_ralph_iterations: None,
+            worker_count: None,
+            agent_type: None,
+            on_stage_transition: None,
+        }
+    }
+
+    // -- Serde roundtrip tests --
 
     #[test]
     fn stage_status_serde_roundtrip() {
@@ -232,5 +472,134 @@ mod tests {
         let back: RalphVerifyDescriptor = serde_json::from_str(&json).unwrap();
         assert_eq!(back.task, "verify app");
         assert_eq!(back.max_iterations, 5);
+    }
+
+    // -- Pipeline orchestrator tests --
+
+    #[tokio::test]
+    async fn pipeline_runs_all_stages() {
+        let config = make_config(vec![
+            Box::new(PassStage {
+                stage_name: "stage-a".into(),
+            }),
+            Box::new(PassStage {
+                stage_name: "stage-b".into(),
+            }),
+        ]);
+        let result = run_pipeline(config).await.unwrap();
+        assert_eq!(result.status, PipelineStatus::Completed);
+        assert_eq!(result.stage_results.len(), 2);
+        assert!(result.error.is_none());
+        assert!(result.failed_stage.is_none());
+    }
+
+    #[tokio::test]
+    async fn pipeline_stops_on_failure() {
+        let config = make_config(vec![
+            Box::new(PassStage {
+                stage_name: "pass".into(),
+            }),
+            Box::new(FailStage),
+            Box::new(PassStage {
+                stage_name: "never".into(),
+            }),
+        ]);
+        let result = run_pipeline(config).await.unwrap();
+        assert_eq!(result.status, PipelineStatus::Failed);
+        assert_eq!(result.failed_stage.as_deref(), Some("fail"));
+        assert_eq!(result.stage_results.len(), 2);
+        assert!(!result.stage_results.contains_key("never"));
+    }
+
+    #[tokio::test]
+    async fn pipeline_skips_skippable_stages() {
+        let config = make_config(vec![
+            Box::new(SkippableStage),
+            Box::new(PassStage {
+                stage_name: "pass".into(),
+            }),
+        ]);
+        let result = run_pipeline(config).await.unwrap();
+        assert_eq!(result.status, PipelineStatus::Completed);
+        assert_eq!(
+            result.stage_results.get("skippable").unwrap().status,
+            StageStatus::Skipped
+        );
+    }
+
+    #[tokio::test]
+    async fn pipeline_catches_stage_errors() {
+        let config = make_config(vec![Box::new(ErrorStage)]);
+        let result = run_pipeline(config).await.unwrap();
+        assert_eq!(result.status, PipelineStatus::Failed);
+        assert_eq!(result.failed_stage.as_deref(), Some("error"));
+        let sr = result.stage_results.get("error").unwrap();
+        assert_eq!(sr.status, StageStatus::Failed);
+        assert!(sr.error.as_deref().unwrap().contains("stage panicked"));
+    }
+
+    #[tokio::test]
+    async fn pipeline_validates_empty_name() {
+        let config = PipelineConfig {
+            name: "".into(),
+            task: "something".into(),
+            stages: vec![Box::new(PassStage {
+                stage_name: "a".into(),
+            })],
+            cwd: None,
+            session_id: None,
+            max_ralph_iterations: None,
+            worker_count: None,
+            agent_type: None,
+            on_stage_transition: None,
+        };
+        let err = run_pipeline(config).await.unwrap_err();
+        assert!(err.to_string().contains("name must not be empty"));
+    }
+
+    #[tokio::test]
+    async fn pipeline_validates_no_stages() {
+        let config = PipelineConfig {
+            name: "test".into(),
+            task: "something".into(),
+            stages: vec![],
+            cwd: None,
+            session_id: None,
+            max_ralph_iterations: None,
+            worker_count: None,
+            agent_type: None,
+            on_stage_transition: None,
+        };
+        let err = run_pipeline(config).await.unwrap_err();
+        assert!(err.to_string().contains("at least one stage"));
+    }
+
+    #[tokio::test]
+    async fn pipeline_validates_duplicate_stage_names() {
+        let config = make_config(vec![
+            Box::new(PassStage {
+                stage_name: "dup".into(),
+            }),
+            Box::new(PassStage {
+                stage_name: "dup".into(),
+            }),
+        ]);
+        let err = run_pipeline(config).await.unwrap_err();
+        assert!(err.to_string().contains("duplicate stage name"));
+    }
+
+    #[tokio::test]
+    async fn pipeline_accumulates_artifacts() {
+        let config = make_config(vec![
+            Box::new(PassStage {
+                stage_name: "stage-a".into(),
+            }),
+            Box::new(PassStage {
+                stage_name: "stage-b".into(),
+            }),
+        ]);
+        let result = run_pipeline(config).await.unwrap();
+        assert!(result.artifacts.contains_key("stage-a:stage-a-output"));
+        assert!(result.artifacts.contains_key("stage-b:stage-b-output"));
     }
 }
