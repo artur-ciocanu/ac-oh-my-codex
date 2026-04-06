@@ -1,0 +1,20 @@
+[package]
+name = "omx-notify-pushover"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Pushover notification hook for OMX"
+
+[[bin]]
+name = "omx-notify-pushover"
+path = "src/main.rs"
+
+[dependencies]
+omx-types = { path = "../omx-types" }
+omx-notify-template = { path = "../omx-notify-template" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+reqwest = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }

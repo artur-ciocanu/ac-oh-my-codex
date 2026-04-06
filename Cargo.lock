@@ -1365,6 +1365,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "omx-notify-generic"
+version = "0.11.13"
+dependencies = [
+ "omx-notify-template",
+ "omx-types",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "omx-notify-pushover"
+version = "0.11.13"
+dependencies = [
+ "omx-notify-template",
+ "omx-types",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "omx-notify-slack"
 version = "0.11.13"
 dependencies = [
@@ -1386,6 +1412,17 @@ dependencies = [
  "serde_json",
  "tokio",
  "tracing",
+]
+
+[[package]]
+name = "omx-notify-template"
+version = "0.11.13"
+dependencies = [
+ "chrono",
+ "omx-types",
+ "serde",
+ "serde_json",
+ "tempfile",
 ]
 
 [[package]]
