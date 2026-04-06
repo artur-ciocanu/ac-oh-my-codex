@@ -37,6 +37,14 @@ pub trait SetupGenerator: Send + Sync {
     fn copy_skills(&self, scope: SetupScope) -> Result<(), OmxError>;
 }
 
+pub fn embedded_prompt_names() -> Vec<&'static str> {
+    vec!["executor", "planner", "verifier", "architect", "reviewer"]
+}
+
+pub fn embedded_skill_names() -> Vec<&'static str> {
+    vec!["explore", "sparkshell", "deep-interview"]
+}
+
 pub struct DefaultSetupGenerator;
 
 impl SetupGenerator for DefaultSetupGenerator {
@@ -145,12 +153,56 @@ impl SetupGenerator for DefaultSetupGenerator {
     }
 
     fn copy_prompts(&self, scope: SetupScope) -> Result<(), OmxError> {
-        tracing::info!("copy_prompts: scope={scope:?} — embedded asset pipeline not yet wired");
+        let base = match scope {
+            SetupScope::User => omx_config::default_codex_home().join("prompts"),
+            SetupScope::Project => std::env::current_dir()
+                .map_err(OmxError::Io)?
+                .join(".omx")
+                .join("prompts"),
+        };
+        std::fs::create_dir_all(&base).map_err(OmxError::Io)?;
+        for name in embedded_prompt_names() {
+            let path = base.join(format!("{name}.md"));
+            if !path.exists() {
+                std::fs::write(
+                    &path,
+                    format!("# {name}\n\n> Placeholder prompt for {name} agent.\n"),
+                )
+                .map_err(OmxError::Io)?;
+            }
+        }
+        tracing::info!(
+            "copy_prompts: wrote {} prompts to {}",
+            embedded_prompt_names().len(),
+            base.display()
+        );
         Ok(())
     }
 
     fn copy_skills(&self, scope: SetupScope) -> Result<(), OmxError> {
-        tracing::info!("copy_skills: scope={scope:?} — embedded asset pipeline not yet wired");
+        let base = match scope {
+            SetupScope::User => omx_config::default_codex_home().join("skills"),
+            SetupScope::Project => std::env::current_dir()
+                .map_err(OmxError::Io)?
+                .join(".omx")
+                .join("skills"),
+        };
+        std::fs::create_dir_all(&base).map_err(OmxError::Io)?;
+        for name in embedded_skill_names() {
+            let path = base.join(format!("{name}.md"));
+            if !path.exists() {
+                std::fs::write(
+                    &path,
+                    format!("# {name}\n\n> Placeholder skill definition for {name}.\n"),
+                )
+                .map_err(OmxError::Io)?;
+            }
+        }
+        tracing::info!(
+            "copy_skills: wrote {} skills to {}",
+            embedded_skill_names().len(),
+            base.display()
+        );
         Ok(())
     }
 }
@@ -286,6 +338,18 @@ mod tests {
         assert!(result[0].1.contains("model = \"o3\""));
         assert_eq!(result[1].0, "reviewer.toml");
         assert!(!result[1].1.contains("model ="), "no model when None");
+    }
+
+    #[test]
+    fn embedded_prompts_list_is_not_empty() {
+        let prompts = embedded_prompt_names();
+        assert!(!prompts.is_empty());
+    }
+
+    #[test]
+    fn embedded_skills_list_is_not_empty() {
+        let skills = embedded_skill_names();
+        assert!(!skills.is_empty());
     }
 
     #[test]
