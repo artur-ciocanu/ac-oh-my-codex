@@ -38,6 +38,8 @@ members = [
   "crates/omx-ralph",
   "crates/omx-autoresearch",
   "crates/omx-pipeline",
+  # Integration tests
+  "tests",
 ]
 resolver = "2"
 
@@ -69,6 +71,7 @@ tempfile = "3"
 dirs = "5"
 uuid = { version = "1", features = ["v4"] }
 chrono = { version = "0.4", default-features = false, features = ["clock", "serde"] }
+wiremock = "0.6"
 ulid = "1"
 lsp-types = "0.97"
 

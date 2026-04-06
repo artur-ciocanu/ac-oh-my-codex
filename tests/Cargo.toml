@@ -1,0 +1,22 @@
+[package]
+name = "omx-integration-tests"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Integration tests for OMX workspace"
+
+[dependencies]
+omx-types = { path = "../crates/omx-types" }
+omx-config = { path = "../crates/omx-config" }
+omx-state = { path = "../crates/omx-state" }
+omx-modes = { path = "../crates/omx-modes" }
+omx-hooks = { path = "../crates/omx-hooks" }
+omx-notify-template = { path = "../crates/omx-notify-template" }
+
+wiremock = { workspace = true }
+tempfile = { workspace = true }
+serde_json = { workspace = true }
+serde = { workspace = true }
+tokio = { workspace = true }
+chrono = { workspace = true }
