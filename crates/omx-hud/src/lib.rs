@@ -39,6 +39,14 @@ impl Drop for TerminalGuard {
     }
 }
 
+/// Refresh HudState with live data (git context).
+pub fn refresh_state(state: &mut HudState) {
+    if let Some(ctx) = git_context::read_git_context() {
+        state.git_branch = Some(ctx.branch);
+        state.git_dirty = ctx.dirty;
+    }
+}
+
 pub async fn run_hud(initial_state: HudState) -> Result<(), Box<dyn std::error::Error>> {
     enable_raw_mode()?;
     stdout().execute(EnterAlternateScreen)?;
@@ -46,9 +54,10 @@ pub async fn run_hud(initial_state: HudState) -> Result<(), Box<dyn std::error::
 
     let backend = ratatui::backend::CrosstermBackend::new(stdout());
     let mut terminal = ratatui::Terminal::new(backend)?;
-    let state = initial_state;
+    let mut state = initial_state;
 
     loop {
+        refresh_state(&mut state);
         terminal.draw(|frame| {
             render_frame(&state, frame, frame.area());
         })?;
@@ -283,6 +292,15 @@ mod tests {
 
         assert!(text.contains("AUTOPILOT"), "should show mode indicator");
         assert!(text.contains("main"), "should show git branch");
+    }
+
+    #[test]
+    fn refresh_state_updates_git_context() {
+        let mut state = HudState::default();
+        assert!(state.git_branch.is_none());
+        refresh_state(&mut state);
+        // Tests run from within the repo, so git_branch should be populated
+        assert!(state.git_branch.is_some());
     }
 
     #[test]
