@@ -3,7 +3,7 @@
 use omx_types::OmxError;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -481,12 +481,184 @@ pub fn decide_outcome(
 }
 
 // ---------------------------------------------------------------------------
+// Instruction builder
+// ---------------------------------------------------------------------------
+
+pub fn trim_content(s: &str, max_len: usize) -> String {
+    if s.len() <= max_len {
+        s.to_string()
+    } else {
+        let mut result = s[..max_len].to_string();
+        result.push_str("...");
+        result
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct InstructionContext {
+    pub run_id: String,
+    pub iteration: u32,
+    pub worktree_path: PathBuf,
+    pub candidate_file: PathBuf,
+    pub last_kept_commit: Option<String>,
+    pub last_kept_score: Option<f64>,
+    pub trailing_noops: u32,
+}
+
+pub fn build_instructions(
+    contract: &AutoresearchMissionContract,
+    context: &InstructionContext,
+) -> String {
+    let mut out = String::new();
+
+    out.push_str("# Autoresearch Instructions\n\n");
+    out.push_str(&format!("**Run ID:** {}\n", context.run_id));
+    out.push_str(&format!("**Iteration:** {}\n", context.iteration));
+    out.push_str(&format!(
+        "**Worktree:** {}\n",
+        context.worktree_path.display()
+    ));
+    out.push_str(&format!(
+        "**Evaluator command:** {}\n",
+        contract.sandbox.evaluator.command
+    ));
+    out.push_str(&format!(
+        "**Keep policy:** {}\n",
+        contract.sandbox.evaluator.keep_policy
+    ));
+
+    if let Some(ref commit) = context.last_kept_commit {
+        out.push_str(&format!("**Last kept commit:** {}\n", commit));
+    }
+    if let Some(score) = context.last_kept_score {
+        out.push_str(&format!("**Last kept score:** {}\n", score));
+    }
+
+    out.push_str("\n## Mission\n\n");
+    out.push_str(&contract.mission_content);
+    out.push_str("\n\n## Sandbox\n\n");
+    out.push_str(&contract.sandbox.body);
+
+    out.push_str("\n\n## Candidate Output\n\n");
+    out.push_str(&format!(
+        "Write your candidate artifact as JSON to: `{}`\n",
+        context.candidate_file.display()
+    ));
+
+    if context.trailing_noops > 0 {
+        out.push_str(&format!(
+            "\n**WARNING:** {} consecutive noop iterations detected. \
+             Please make substantive changes to produce a meaningful candidate.\n",
+            context.trailing_noops
+        ));
+    }
+
+    out
+}
+
+// ---------------------------------------------------------------------------
+// Git utilities
+// ---------------------------------------------------------------------------
+
+pub async fn git_rev_parse(worktree: &Path, rev: &str) -> Result<String, OmxError> {
+    let output = tokio::process::Command::new("git")
+        .args(["rev-parse", rev])
+        .current_dir(worktree)
+        .output()
+        .await
+        .map_err(|e| OmxError::Autoresearch(format!("git rev-parse failed: {}", e)))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(OmxError::Autoresearch(format!(
+            "git rev-parse {} failed: {}",
+            rev, stderr
+        )));
+    }
+
+    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+}
+
+pub async fn git_status_porcelain(worktree: &Path) -> Result<String, OmxError> {
+    let output = tokio::process::Command::new("git")
+        .args(["status", "--porcelain"])
+        .current_dir(worktree)
+        .output()
+        .await
+        .map_err(|e| OmxError::Autoresearch(format!("git status failed: {}", e)))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(OmxError::Autoresearch(format!(
+            "git status failed: {}",
+            stderr
+        )));
+    }
+
+    Ok(String::from_utf8_lossy(&output.stdout).to_string())
+}
+
+pub async fn assert_reset_safe_worktree(worktree: &Path) -> Result<(), OmxError> {
+    let status = git_status_porcelain(worktree).await?;
+    let allowed_patterns = ["results.tsv", "run.log", "node_modules", ".omx/"];
+
+    for line in status.lines() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        // The file path starts after the two-character status prefix and a space
+        let file_part = if line.len() > 3 { &line[3..] } else { line };
+        let is_allowed = allowed_patterns
+            .iter()
+            .any(|pat| file_part.starts_with(pat) || file_part.contains(pat));
+        if !is_allowed {
+            return Err(OmxError::Autoresearch(format!(
+                "worktree has uncommitted changes that are not safe to reset: {}",
+                file_part
+            )));
+        }
+    }
+
+    Ok(())
+}
+
+pub async fn count_trailing_noops(ledger_file: &Path) -> Result<u32, OmxError> {
+    let content = match tokio::fs::read_to_string(ledger_file).await {
+        Ok(c) => c,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(0),
+        Err(e) => {
+            return Err(OmxError::Autoresearch(format!(
+                "failed to read ledger: {}",
+                e
+            )))
+        }
+    };
+
+    let entries: Vec<AutoresearchLedgerEntry> = serde_json::from_str(&content)
+        .map_err(|e| OmxError::Autoresearch(format!("failed to parse ledger: {}", e)))?;
+
+    let mut count = 0u32;
+    for entry in entries.iter().rev() {
+        if entry.decision == AutoresearchDecisionStatus::Noop {
+            count += 1;
+        } else {
+            break;
+        }
+    }
+
+    Ok(count)
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // -- Task 7: Contract types and loading --
 
     #[test]
     fn keep_policy_serde_roundtrip() {
@@ -799,5 +971,171 @@ mod tests {
         let e = make_eval(Some(true), None, None);
         let (status, _) = decide_outcome(&m, &c, &e);
         assert_eq!(status, AutoresearchDecisionStatus::Ambiguous);
+    }
+
+    // -- Task 9: Instruction builder and git utilities --
+
+    #[test]
+    fn trim_content_short_unchanged() {
+        assert_eq!(trim_content("hello", 10), "hello");
+    }
+
+    #[test]
+    fn trim_content_long_truncated() {
+        assert_eq!(trim_content("hello world", 5), "hello...");
+    }
+
+    #[test]
+    fn build_instructions_contains_task_info() {
+        let contract = AutoresearchMissionContract {
+            mission_dir: PathBuf::from("/tmp/mission"),
+            repo_root: PathBuf::from("/tmp/repo"),
+            mission_file: PathBuf::from("/tmp/mission/mission.md"),
+            sandbox_file: PathBuf::from("/tmp/mission/sandbox.md"),
+            mission_relative_dir: "mission".into(),
+            mission_content: "Do the thing".into(),
+            sandbox_content: "sandbox raw".into(),
+            sandbox: ParsedSandboxContract {
+                frontmatter: HashMap::new(),
+                evaluator: AutoresearchEvaluatorContract {
+                    command: "cargo test".into(),
+                    format: "json".into(),
+                    keep_policy: AutoresearchKeepPolicy::ScoreImprovement,
+                },
+                body: "sandbox body".into(),
+            },
+            mission_slug: "test-mission".into(),
+        };
+
+        let context = InstructionContext {
+            run_id: "run-123".into(),
+            iteration: 5,
+            worktree_path: PathBuf::from("/tmp/wt"),
+            candidate_file: PathBuf::from("/tmp/candidate.json"),
+            last_kept_commit: Some("abc123".into()),
+            last_kept_score: Some(0.75),
+            trailing_noops: 0,
+        };
+
+        let instructions = build_instructions(&contract, &context);
+        assert!(instructions.contains("run-123"));
+        assert!(instructions.contains("5"));
+        assert!(instructions.contains("cargo test"));
+        assert!(instructions.contains("score_improvement"));
+        assert!(instructions.contains("abc123"));
+        assert!(instructions.contains("0.75"));
+        assert!(instructions.contains("Do the thing"));
+        assert!(instructions.contains("sandbox body"));
+        assert!(!instructions.contains("noop"));
+    }
+
+    #[test]
+    fn build_instructions_mentions_noops_when_positive() {
+        let contract = AutoresearchMissionContract {
+            mission_dir: PathBuf::from("/tmp/mission"),
+            repo_root: PathBuf::from("/tmp/repo"),
+            mission_file: PathBuf::from("/tmp/mission/mission.md"),
+            sandbox_file: PathBuf::from("/tmp/mission/sandbox.md"),
+            mission_relative_dir: "mission".into(),
+            mission_content: "Do the thing".into(),
+            sandbox_content: "sandbox raw".into(),
+            sandbox: ParsedSandboxContract {
+                frontmatter: HashMap::new(),
+                evaluator: AutoresearchEvaluatorContract {
+                    command: "cargo test".into(),
+                    format: "json".into(),
+                    keep_policy: AutoresearchKeepPolicy::ScoreImprovement,
+                },
+                body: "sandbox body".into(),
+            },
+            mission_slug: "test-mission".into(),
+        };
+
+        let context = InstructionContext {
+            run_id: "run-123".into(),
+            iteration: 5,
+            worktree_path: PathBuf::from("/tmp/wt"),
+            candidate_file: PathBuf::from("/tmp/candidate.json"),
+            last_kept_commit: None,
+            last_kept_score: None,
+            trailing_noops: 3,
+        };
+
+        let instructions = build_instructions(&contract, &context);
+        assert!(instructions.contains("3 consecutive noop"));
+    }
+
+    #[tokio::test]
+    async fn count_trailing_noops_empty_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let ledger = dir.path().join("ledger.json");
+        tokio::fs::write(&ledger, "[]").await.unwrap();
+        let count = count_trailing_noops(&ledger).await.unwrap();
+        assert_eq!(count, 0);
+    }
+
+    #[tokio::test]
+    async fn count_trailing_noops_missing_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let ledger = dir.path().join("nonexistent.json");
+        let count = count_trailing_noops(&ledger).await.unwrap();
+        assert_eq!(count, 0);
+    }
+
+    #[tokio::test]
+    async fn count_trailing_noops_with_noops() {
+        let dir = tempfile::tempdir().unwrap();
+        let ledger = dir.path().join("ledger.json");
+        let entries = serde_json::to_string(&vec![
+            AutoresearchLedgerEntry {
+                iteration: 1,
+                kind: "iteration".into(),
+                decision: AutoresearchDecisionStatus::Keep,
+                decision_reason: "good".into(),
+                candidate_status: AutoresearchCandidateStatus::Candidate,
+                base_commit: None,
+                candidate_commit: None,
+                kept_commit: None,
+                keep_policy: "score_improvement".into(),
+                evaluator: None,
+                created_at: "2026-04-05T00:00:00Z".into(),
+                notes: vec![],
+                description: None,
+            },
+            AutoresearchLedgerEntry {
+                iteration: 2,
+                kind: "iteration".into(),
+                decision: AutoresearchDecisionStatus::Noop,
+                decision_reason: "no changes".into(),
+                candidate_status: AutoresearchCandidateStatus::Noop,
+                base_commit: None,
+                candidate_commit: None,
+                kept_commit: None,
+                keep_policy: "score_improvement".into(),
+                evaluator: None,
+                created_at: "2026-04-05T00:00:00Z".into(),
+                notes: vec![],
+                description: None,
+            },
+            AutoresearchLedgerEntry {
+                iteration: 3,
+                kind: "iteration".into(),
+                decision: AutoresearchDecisionStatus::Noop,
+                decision_reason: "no changes".into(),
+                candidate_status: AutoresearchCandidateStatus::Noop,
+                base_commit: None,
+                candidate_commit: None,
+                kept_commit: None,
+                keep_policy: "score_improvement".into(),
+                evaluator: None,
+                created_at: "2026-04-05T00:00:00Z".into(),
+                notes: vec![],
+                description: None,
+            },
+        ])
+        .unwrap();
+        tokio::fs::write(&ledger, entries).await.unwrap();
+        let count = count_trailing_noops(&ledger).await.unwrap();
+        assert_eq!(count, 2);
     }
 }
