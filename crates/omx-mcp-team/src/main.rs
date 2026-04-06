@@ -4,6 +4,8 @@ use rmcp::{tool, ServerHandler, ServiceExt};
 use serde::Deserialize;
 use tokio::sync::Mutex;
 
+use uuid::Uuid;
+
 use omx_team::config::parse_team_spec;
 use omx_team::{DefaultTeamRuntime, TeamRuntime};
 
@@ -39,6 +41,16 @@ pub struct TeamCleanupParams {
     pub team_name: String,
 }
 
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct TeamNudgeParams {
+    /// Team name
+    pub team_name: String,
+    /// Worker ID to nudge
+    pub worker_id: String,
+    /// Optional message to send with the nudge
+    pub message: Option<String>,
+}
+
 #[derive(Clone)]
 struct TeamMcpServer {
     runtime: Arc<Mutex<DefaultTeamRuntime>>,
@@ -61,16 +73,16 @@ impl TeamMcpServer {
         };
 
         let team_name = config.name.0.clone();
+        let job_id = Uuid::new_v4().to_string();
 
         let mut runtime = self.runtime.lock().await;
         match runtime.start(config).await {
-            Ok(()) => {
-                serde_json::json!({
-                    "status": "started",
-                    "team_name": team_name
-                })
-                .to_string()
-            }
+            Ok(()) => serde_json::json!({
+                "status": "started",
+                "team_name": team_name,
+                "job_id": job_id
+            })
+            .to_string(),
             Err(e) => format!("{{\"error\": \"{e}\"}}"),
         }
     }
@@ -119,6 +131,26 @@ impl TeamMcpServer {
         let mut runtime = self.runtime.lock().await;
         match runtime.shutdown().await {
             Ok(()) => r#"{"status": "cleaned_up"}"#.to_string(),
+            Err(e) => format!("{{\"error\": \"{e}\"}}"),
+        }
+    }
+
+    #[tool(description = "Send a nudge to an idle worker to resume work")]
+    async fn omx_run_team_nudge(&self, #[tool(aggr)] params: TeamNudgeParams) -> String {
+        let worker_id = omx_types::WorkerId(params.worker_id.clone());
+        let message = params
+            .message
+            .unwrap_or_else(|| "Nudge: please check your inbox and continue working.".to_string());
+
+        let runtime = self.runtime.lock().await;
+        let leader_id = omx_types::WorkerId("leader".to_string());
+        match runtime.send_message(&leader_id, &worker_id, &message).await {
+            Ok(()) => serde_json::json!({
+                "status": "nudged",
+                "worker_id": params.worker_id,
+                "message": message
+            })
+            .to_string(),
             Err(e) => format!("{{\"error\": \"{e}\"}}"),
         }
     }

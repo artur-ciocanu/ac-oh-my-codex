@@ -54,10 +54,7 @@ mod tests {
     #[test]
     fn infer_phase_all_pending_is_plan() {
         let ctrl = DefaultPhaseController;
-        let tasks = vec![
-            (TaskStatus::Pending, None),
-            (TaskStatus::Pending, None),
-        ];
+        let tasks = vec![(TaskStatus::Pending, None), (TaskStatus::Pending, None)];
         assert_eq!(ctrl.infer_phase(&tasks), TeamPhase::Plan);
     }
 

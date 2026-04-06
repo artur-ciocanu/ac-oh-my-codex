@@ -93,7 +93,8 @@ impl StateStore for FileStateStore {
             let mut tmp = tempfile::NamedTempFile::new_in(dir)
                 .map_err(|e| OmxError::State(format!("failed to create temp file: {e}")))?;
 
-            tmp.as_file().lock_exclusive()
+            tmp.as_file()
+                .lock_exclusive()
                 .map_err(|e| OmxError::State(format!("failed to acquire exclusive lock: {e}")))?;
 
             std::io::Write::write_all(&mut tmp, &data)?;
@@ -207,7 +208,10 @@ mod tests {
     async fn write_then_read_roundtrip() {
         let tmp = tempfile::tempdir().unwrap();
         let store = FileStateStore::new(tmp.path().to_path_buf());
-        let data = TestData { name: "hello".into(), value: 42 };
+        let data = TestData {
+            name: "hello".into(),
+            value: 42,
+        };
         store.write(Path::new("test.json"), &data).await.unwrap();
         let read_back: Option<TestData> = store.read(Path::new("test.json")).await.unwrap();
         assert_eq!(read_back, Some(data));
@@ -225,8 +229,14 @@ mod tests {
     async fn write_creates_parent_directories() {
         let tmp = tempfile::tempdir().unwrap();
         let store = FileStateStore::new(tmp.path().to_path_buf());
-        let data = TestData { name: "nested".into(), value: 1 };
-        store.write(Path::new("a/b/c/data.json"), &data).await.unwrap();
+        let data = TestData {
+            name: "nested".into(),
+            value: 1,
+        };
+        store
+            .write(Path::new("a/b/c/data.json"), &data)
+            .await
+            .unwrap();
         let read_back: Option<TestData> = store.read(Path::new("a/b/c/data.json")).await.unwrap();
         assert_eq!(read_back, Some(data));
     }
@@ -235,7 +245,10 @@ mod tests {
     async fn delete_removes_file() {
         let tmp = tempfile::tempdir().unwrap();
         let store = FileStateStore::new(tmp.path().to_path_buf());
-        let data = TestData { name: "bye".into(), value: 0 };
+        let data = TestData {
+            name: "bye".into(),
+            value: 0,
+        };
         store.write(Path::new("del.json"), &data).await.unwrap();
         store.delete(Path::new("del.json")).await.unwrap();
         let result: Option<TestData> = store.read(Path::new("del.json")).await.unwrap();
@@ -253,12 +266,18 @@ mod tests {
     async fn list_returns_sorted_entries() {
         let tmp = tempfile::tempdir().unwrap();
         let store = FileStateStore::new(tmp.path().to_path_buf());
-        let data = TestData { name: "x".into(), value: 0 };
+        let data = TestData {
+            name: "x".into(),
+            value: 0,
+        };
         store.write(Path::new("dir/b.json"), &data).await.unwrap();
         store.write(Path::new("dir/a.json"), &data).await.unwrap();
         store.write(Path::new("dir/c.json"), &data).await.unwrap();
         let entries = store.list(Path::new("dir")).await.unwrap();
-        let names: Vec<&str> = entries.iter().filter_map(|p| p.file_name().and_then(|n| n.to_str())).collect();
+        let names: Vec<&str> = entries
+            .iter()
+            .filter_map(|p| p.file_name().and_then(|n| n.to_str()))
+            .collect();
         assert_eq!(names, vec!["a.json", "b.json", "c.json"]);
     }
 
@@ -274,12 +293,30 @@ mod tests {
     async fn append_jsonl_preserves_existing_entries() {
         let tmp = tempfile::tempdir().unwrap();
         let store = FileStateStore::new(tmp.path().to_path_buf());
-        let entry1 = TestData { name: "first".into(), value: 1 };
-        let entry2 = TestData { name: "second".into(), value: 2 };
-        let entry3 = TestData { name: "third".into(), value: 3 };
-        store.append_jsonl(Path::new("log.jsonl"), &entry1).await.unwrap();
-        store.append_jsonl(Path::new("log.jsonl"), &entry2).await.unwrap();
-        store.append_jsonl(Path::new("log.jsonl"), &entry3).await.unwrap();
+        let entry1 = TestData {
+            name: "first".into(),
+            value: 1,
+        };
+        let entry2 = TestData {
+            name: "second".into(),
+            value: 2,
+        };
+        let entry3 = TestData {
+            name: "third".into(),
+            value: 3,
+        };
+        store
+            .append_jsonl(Path::new("log.jsonl"), &entry1)
+            .await
+            .unwrap();
+        store
+            .append_jsonl(Path::new("log.jsonl"), &entry2)
+            .await
+            .unwrap();
+        store
+            .append_jsonl(Path::new("log.jsonl"), &entry3)
+            .await
+            .unwrap();
         let full_path = store.resolve(Path::new("log.jsonl"));
         let contents = std::fs::read_to_string(full_path).unwrap();
         let lines: Vec<&str> = contents.lines().collect();
@@ -300,7 +337,10 @@ mod tests {
         for i in 0..20 {
             let store = store.clone();
             handles.push(tokio::spawn(async move {
-                let data = TestData { name: format!("writer-{i}"), value: i };
+                let data = TestData {
+                    name: format!("writer-{i}"),
+                    value: i,
+                };
                 store.write(Path::new("shared.json"), &data).await.unwrap();
             }));
         }

@@ -348,12 +348,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     let task_id = omx_types::TaskId(task_id);
                     let token = omx_types::LeaseToken("cli".into());
                     runtime
-                        .transition_task(
-                            &task_id,
-                            &token,
-                            omx_types::TaskStatus::Pending,
-                            None,
-                        )
+                        .transition_task(&task_id, &token, omx_types::TaskStatus::Pending, None)
                         .await
                         .map_err(|e| format!("Release failed: {e}"))?;
                     println!("ok");
@@ -443,10 +438,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 valid += 1;
                             } else {
                                 invalid += 1;
-                                eprintln!(
-                                    "  WARN: {} is not executable",
-                                    hook.path.display()
-                                );
+                                eprintln!("  WARN: {} is not executable", hook.path.display());
                             }
                         }
                         println!("{valid} valid, {invalid} invalid hooks");
@@ -482,61 +474,71 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 println!("{} hooks tested", results.len());
             }
         },
-        Some(Commands::HookApi { action }) => match action {
-            HookApiAction::TmuxSendKeys { target, text } => {
-                if !target.starts_with("omx-") && !target.contains("omx-") {
-                    eprintln!("Warning: target '{target}' does not appear to be an OMX-managed session");
+        Some(Commands::HookApi { action }) => {
+            match action {
+                HookApiAction::TmuxSendKeys { target, text } => {
+                    if !target.starts_with("omx-") && !target.contains("omx-") {
+                        eprintln!("Warning: target '{target}' does not appear to be an OMX-managed session");
+                    }
+                    let output = std::process::Command::new("tmux")
+                        .args(["send-keys", "-t", &target, &text, "Enter"])
+                        .output()
+                        .map_err(|e| format!("tmux send-keys failed: {e}"))?;
+                    if !output.status.success() {
+                        let stderr = String::from_utf8_lossy(&output.stderr);
+                        eprintln!("tmux send-keys error: {stderr}");
+                    }
                 }
-                let output = std::process::Command::new("tmux")
-                    .args(["send-keys", "-t", &target, &text, "Enter"])
-                    .output()
-                    .map_err(|e| format!("tmux send-keys failed: {e}"))?;
-                if !output.status.success() {
-                    let stderr = String::from_utf8_lossy(&output.stderr);
-                    eprintln!("tmux send-keys error: {stderr}");
+                HookApiAction::StateRead { mode, key } => {
+                    if mode.contains("..")
+                        || mode.contains('/')
+                        || mode.contains('\\')
+                        || key.contains("..")
+                        || key.contains('/')
+                        || key.contains('\\')
+                    {
+                        eprintln!("Invalid mode or key: must not contain path separators or '..'");
+                        std::process::exit(1);
+                    }
+                    let home = omx_config::default_codex_home();
+                    let store = omx_state::FileStateStore::new(home.join(".omx"));
+                    let path = std::path::PathBuf::from(format!("{mode}/{key}.json"));
+                    let value: Option<serde_json::Value> = store.read(&path).await?;
+                    match value {
+                        Some(v) => println!("{}", serde_json::to_string_pretty(&v)?),
+                        None => eprintln!("no value found for {mode}/{key}"),
+                    }
+                }
+                HookApiAction::StateWrite { mode, key, value } => {
+                    if mode.contains("..")
+                        || mode.contains('/')
+                        || mode.contains('\\')
+                        || key.contains("..")
+                        || key.contains('/')
+                        || key.contains('\\')
+                    {
+                        eprintln!("Invalid mode or key: must not contain path separators or '..'");
+                        std::process::exit(1);
+                    }
+                    let home = omx_config::default_codex_home();
+                    let store = omx_state::FileStateStore::new(home.join(".omx"));
+                    let path = std::path::PathBuf::from(format!("{mode}/{key}.json"));
+                    let parsed: serde_json::Value = serde_json::from_str(&value)?;
+                    store.write(&path, &parsed).await?;
+                    println!("ok");
+                }
+                HookApiAction::SessionRead => {
+                    let home = omx_config::default_codex_home();
+                    let store = omx_state::FileStateStore::new(home.join(".omx"));
+                    let path = std::path::PathBuf::from("session/current.json");
+                    let value: Option<serde_json::Value> = store.read(&path).await?;
+                    match value {
+                        Some(v) => println!("{}", serde_json::to_string_pretty(&v)?),
+                        None => println!("{{}}"),
+                    }
                 }
             }
-            HookApiAction::StateRead { mode, key } => {
-                if mode.contains("..") || mode.contains('/') || mode.contains('\\')
-                    || key.contains("..") || key.contains('/') || key.contains('\\')
-                {
-                    eprintln!("Invalid mode or key: must not contain path separators or '..'");
-                    std::process::exit(1);
-                }
-                let home = omx_config::default_codex_home();
-                let store = omx_state::FileStateStore::new(home.join(".omx"));
-                let path = std::path::PathBuf::from(format!("{mode}/{key}.json"));
-                let value: Option<serde_json::Value> = store.read(&path).await?;
-                match value {
-                    Some(v) => println!("{}", serde_json::to_string_pretty(&v)?),
-                    None => eprintln!("no value found for {mode}/{key}"),
-                }
-            }
-            HookApiAction::StateWrite { mode, key, value } => {
-                if mode.contains("..") || mode.contains('/') || mode.contains('\\')
-                    || key.contains("..") || key.contains('/') || key.contains('\\')
-                {
-                    eprintln!("Invalid mode or key: must not contain path separators or '..'");
-                    std::process::exit(1);
-                }
-                let home = omx_config::default_codex_home();
-                let store = omx_state::FileStateStore::new(home.join(".omx"));
-                let path = std::path::PathBuf::from(format!("{mode}/{key}.json"));
-                let parsed: serde_json::Value = serde_json::from_str(&value)?;
-                store.write(&path, &parsed).await?;
-                println!("ok");
-            }
-            HookApiAction::SessionRead => {
-                let home = omx_config::default_codex_home();
-                let store = omx_state::FileStateStore::new(home.join(".omx"));
-                let path = std::path::PathBuf::from("session/current.json");
-                let value: Option<serde_json::Value> = store.read(&path).await?;
-                match value {
-                    Some(v) => println!("{}", serde_json::to_string_pretty(&v)?),
-                    None => println!("{{}}"),
-                }
-            }
-        },
+        }
     }
 
     Ok(())

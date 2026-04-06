@@ -11,7 +11,12 @@ pub struct CommitRecord {
 }
 
 /// Record a worker commit to the hygiene ledger (JSONL file).
-pub fn record_commit(ledger_path: &Path, worker: &str, sha: &str, message: &str) -> Result<(), OmxError> {
+pub fn record_commit(
+    ledger_path: &Path,
+    worker: &str,
+    sha: &str,
+    message: &str,
+) -> Result<(), OmxError> {
     let record = CommitRecord {
         sha: sha.to_string(),
         worker: worker.to_string(),

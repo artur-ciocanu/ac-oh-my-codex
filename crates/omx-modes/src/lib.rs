@@ -204,8 +204,14 @@ mod tests {
     fn mode_parse_name_parses_known_modes() {
         assert_eq!(Mode::parse_name("autopilot"), Some(Mode::Autopilot));
         assert_eq!(Mode::parse_name("Ralph"), Some(Mode::Ralph));
-        assert_eq!(Mode::parse_name("deep-interview"), Some(Mode::DeepInterview));
-        assert_eq!(Mode::parse_name("deep_interview"), Some(Mode::DeepInterview));
+        assert_eq!(
+            Mode::parse_name("deep-interview"),
+            Some(Mode::DeepInterview)
+        );
+        assert_eq!(
+            Mode::parse_name("deep_interview"),
+            Some(Mode::DeepInterview)
+        );
         assert_eq!(Mode::parse_name("unknown"), None);
     }
 

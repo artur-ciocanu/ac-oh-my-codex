@@ -121,8 +121,8 @@ impl HookDispatcher for ShellHookDispatcher {
             .map_err(|e| OmxError::Hook(format!("failed to read hooks dir: {e}")))?;
 
         for entry in entries {
-            let entry = entry
-                .map_err(|e| OmxError::Hook(format!("failed to read dir entry: {e}")))?;
+            let entry =
+                entry.map_err(|e| OmxError::Hook(format!("failed to read dir entry: {e}")))?;
             let path = entry.path();
 
             if path.is_dir() {
@@ -264,8 +264,7 @@ mod tests {
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(&script_path, std::fs::Permissions::from_mode(0o755))
-                .unwrap();
+            std::fs::set_permissions(&script_path, std::fs::Permissions::from_mode(0o755)).unwrap();
         }
 
         std::fs::write(tmp.path().join("readme.txt"), "not a hook").unwrap();
@@ -287,7 +286,9 @@ mod tests {
     #[test]
     fn discover_returns_empty_for_missing_dir() {
         let dispatcher = ShellHookDispatcher::new(5000);
-        let hooks = dispatcher.discover(Path::new("/nonexistent/hooks/dir")).unwrap();
+        let hooks = dispatcher
+            .discover(Path::new("/nonexistent/hooks/dir"))
+            .unwrap();
         assert!(hooks.is_empty());
     }
 
@@ -305,8 +306,7 @@ mod tests {
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(&script_path, std::fs::Permissions::from_mode(0o755))
-                .unwrap();
+            std::fs::set_permissions(&script_path, std::fs::Permissions::from_mode(0o755)).unwrap();
         }
 
         let hooks = vec![HookDescriptor {
@@ -348,8 +348,7 @@ mod tests {
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(&script_path, std::fs::Permissions::from_mode(0o755))
-                .unwrap();
+            std::fs::set_permissions(&script_path, std::fs::Permissions::from_mode(0o755)).unwrap();
         }
 
         let hooks = vec![HookDescriptor {

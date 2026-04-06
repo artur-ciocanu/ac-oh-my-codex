@@ -9,11 +9,25 @@ use serde::{Deserialize, Serialize};
 pub struct TraceTimelineParams {
     pub session_id: Option<String>,
     pub limit: Option<u32>,
+    /// Filter by mode name (e.g. "autopilot", "ralph")
+    pub mode: Option<String>,
+    /// Filter events at or after this ISO timestamp
+    pub time_start: Option<String>,
+    /// Filter events at or before this ISO timestamp
+    pub time_end: Option<String>,
+    /// Filter by severity: "info", "warn", "error"
+    pub severity: Option<String>,
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct TraceSummaryParams {
     pub session_id: Option<String>,
+    /// Filter by mode name
+    pub mode: Option<String>,
+    /// Filter events at or after this ISO timestamp
+    pub time_start: Option<String>,
+    /// Filter events at or before this ISO timestamp
+    pub time_end: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -49,9 +63,7 @@ impl TraceMcpServer {
     }
 
     fn timeline_path(session_id: &str) -> PathBuf {
-        Path::new("trace")
-            .join(session_id)
-            .join("timeline.jsonl")
+        Path::new("trace").join(session_id).join("timeline.jsonl")
     }
 
     async fn read_timeline(&self, session_id: &str) -> Result<Vec<TimelineEntry>, String> {
@@ -74,11 +86,52 @@ impl TraceMcpServer {
 
         Ok(entries)
     }
+
+    fn filter_entries(
+        entries: Vec<TimelineEntry>,
+        mode: Option<&str>,
+        time_start: Option<&str>,
+        time_end: Option<&str>,
+        severity: Option<&str>,
+    ) -> Vec<TimelineEntry> {
+        entries
+            .into_iter()
+            .filter(|e| {
+                if let Some(m) = mode {
+                    let entry_mode = e.extra.get("mode").and_then(|v| v.as_str()).unwrap_or("");
+                    if entry_mode != m {
+                        return false;
+                    }
+                }
+                if let Some(start) = time_start {
+                    if e.timestamp.as_str() < start {
+                        return false;
+                    }
+                }
+                if let Some(end) = time_end {
+                    if e.timestamp.as_str() > end {
+                        return false;
+                    }
+                }
+                if let Some(sev) = severity {
+                    let entry_sev = e
+                        .extra
+                        .get("severity")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("info");
+                    if entry_sev != sev {
+                        return false;
+                    }
+                }
+                true
+            })
+            .collect()
+    }
 }
 
 #[rmcp::tool(tool_box)]
 impl TraceMcpServer {
-    #[tool(description = "Get turn-by-turn timeline for a session")]
+    #[tool(description = "Get turn-by-turn timeline for a session with optional filters")]
     async fn trace_timeline(&self, #[tool(aggr)] params: TraceTimelineParams) -> String {
         let session_id = params.session_id.as_deref().unwrap_or("current");
 
@@ -87,18 +140,29 @@ impl TraceMcpServer {
                 if entries.is_empty() {
                     return format!("No timeline entries for session={session_id}");
                 }
+                let filtered = Self::filter_entries(
+                    entries,
+                    params.mode.as_deref(),
+                    params.time_start.as_deref(),
+                    params.time_end.as_deref(),
+                    params.severity.as_deref(),
+                );
                 let limited: Vec<&TimelineEntry> = if let Some(limit) = params.limit {
-                    entries.iter().rev().take(limit as usize).collect()
+                    filtered.iter().rev().take(limit as usize).collect()
                 } else {
-                    entries.iter().collect()
+                    filtered.iter().collect()
                 };
-                serde_json::to_string_pretty(&limited).unwrap_or_default()
+                if limited.is_empty() {
+                    "No entries match the given filters".to_string()
+                } else {
+                    serde_json::to_string_pretty(&limited).unwrap_or_default()
+                }
             }
             Err(e) => format!("Error reading timeline: {e}"),
         }
     }
 
-    #[tool(description = "Get summary statistics for a session")]
+    #[tool(description = "Get summary statistics for a session with optional filters")]
     async fn trace_summary(&self, #[tool(aggr)] params: TraceSummaryParams) -> String {
         let session_id = params.session_id.as_deref().unwrap_or("current");
 
@@ -108,11 +172,20 @@ impl TraceMcpServer {
                     return format!("No timeline data for session={session_id}");
                 }
 
-                let total_turns = entries.len();
-                let total_duration_ms: u64 = entries
-                    .iter()
-                    .filter_map(|e| e.duration_ms)
-                    .sum();
+                let filtered = Self::filter_entries(
+                    entries,
+                    params.mode.as_deref(),
+                    params.time_start.as_deref(),
+                    params.time_end.as_deref(),
+                    None,
+                );
+
+                if filtered.is_empty() {
+                    return "No entries match the given filters".to_string();
+                }
+
+                let total_turns = filtered.len();
+                let total_duration_ms: u64 = filtered.iter().filter_map(|e| e.duration_ms).sum();
                 let avg_duration_ms = if total_turns > 0 {
                     total_duration_ms / total_turns as u64
                 } else {
@@ -120,9 +193,17 @@ impl TraceMcpServer {
                 };
 
                 let mut event_counts = std::collections::HashMap::new();
-                for entry in &entries {
+                for entry in &filtered {
                     *event_counts.entry(entry.event.clone()).or_insert(0u32) += 1;
                 }
+
+                let tokens_used: u64 = filtered
+                    .iter()
+                    .filter_map(|e| e.extra.get("tokens_used").and_then(|v| v.as_u64()))
+                    .sum();
+                let quota_remaining = filtered
+                    .last()
+                    .and_then(|e| e.extra.get("quota_remaining").and_then(|v| v.as_u64()));
 
                 let summary = serde_json::json!({
                     "session_id": session_id,
@@ -130,8 +211,10 @@ impl TraceMcpServer {
                     "total_duration_ms": total_duration_ms,
                     "avg_duration_ms": avg_duration_ms,
                     "event_counts": event_counts,
-                    "first_timestamp": entries.first().map(|e| &e.timestamp),
-                    "last_timestamp": entries.last().map(|e| &e.timestamp),
+                    "first_timestamp": filtered.first().map(|e| &e.timestamp),
+                    "last_timestamp": filtered.last().map(|e| &e.timestamp),
+                    "tokens_used": tokens_used,
+                    "quota_remaining": quota_remaining,
                 });
 
                 serde_json::to_string_pretty(&summary).unwrap_or_default()

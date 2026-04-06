@@ -36,6 +36,22 @@ pub struct StateGetStatusParams {
     pub session_id: Option<String>,
 }
 
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct StateDeleteParams {
+    /// Mode scope (e.g. "autopilot", "ralph")
+    pub mode: String,
+    /// Key to delete
+    pub key: String,
+    pub session_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct StateListParams {
+    /// Mode scope — list all keys under this mode
+    pub mode: String,
+    pub session_id: Option<String>,
+}
+
 #[derive(Clone)]
 struct StateMcpServer {
     store: Arc<FileStateStore>,
@@ -146,6 +162,39 @@ impl StateMcpServer {
                 });
                 serde_json::to_string_pretty(&status).unwrap_or_default()
             }
+        }
+    }
+
+    #[tool(description = "Delete a single state key within a mode")]
+    async fn state_delete(&self, #[tool(aggr)] params: StateDeleteParams) -> String {
+        let path = Self::state_path(&params.mode, &params.key);
+        match self.store.delete(&path).await {
+            Ok(()) => format!("Deleted: mode={} key={}", params.mode, params.key),
+            Err(e) => format!("Error deleting state: {e}"),
+        }
+    }
+
+    #[tool(description = "List all keys stored under a specific mode")]
+    async fn state_list(&self, #[tool(aggr)] params: StateListParams) -> String {
+        let dir = Self::mode_dir(&params.mode);
+        match self.store.list(&dir).await {
+            Ok(entries) => {
+                let keys: Vec<String> = entries
+                    .iter()
+                    .filter_map(|p| {
+                        p.file_name()
+                            .and_then(|n| n.to_str())
+                            .and_then(|n| n.strip_suffix(".json"))
+                            .map(String::from)
+                    })
+                    .collect();
+                if keys.is_empty() {
+                    format!("No keys found for mode={}", params.mode)
+                } else {
+                    serde_json::to_string_pretty(&keys).unwrap_or_default()
+                }
+            }
+            Err(e) => format!("Error listing keys: {e}"),
         }
     }
 }

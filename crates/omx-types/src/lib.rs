@@ -140,9 +140,8 @@ impl TeamPhase {
         }
     }
 
-    pub const ALL: &'static [TeamPhase] = &[
-        Self::Plan, Self::Prd, Self::Exec, Self::Verify, Self::Fix,
-    ];
+    pub const ALL: &'static [TeamPhase] =
+        &[Self::Plan, Self::Prd, Self::Exec, Self::Verify, Self::Fix];
 }
 
 impl PartialOrd for TeamPhase {
@@ -393,7 +392,10 @@ mod tests {
         let msg = format_hook_message(&event);
         assert!(msg.contains("failed"), "should contain event name");
         assert!(msg.contains("omx-team"), "should contain source component");
-        assert!(!msg.contains("worker:"), "should not contain worker label when None");
+        assert!(
+            !msg.contains("worker:"),
+            "should not contain worker label when None"
+        );
     }
 
     #[test]
