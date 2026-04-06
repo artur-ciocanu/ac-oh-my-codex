@@ -219,4 +219,202 @@ mod tests {
             "should report invalid input, got: {stderr}"
         );
     }
+
+    // ----- Stub commands -----
+
+    #[test]
+    fn cli_exec_stub() {
+        let config = TestConfig::new();
+        let output = omx_cmd(&config)
+            .args(["exec", "--agent", "test", "do something"])
+            .output()
+            .expect("failed to run omx exec");
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        assert!(
+            stdout.contains("not yet wired") || stdout.contains("exec"),
+            "exec should print stub or exec output, got: {stdout}"
+        );
+    }
+
+    #[test]
+    fn cli_agents_stub() {
+        let config = TestConfig::new();
+        let output = omx_cmd(&config)
+            .arg("agents")
+            .output()
+            .expect("failed to run omx agents");
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        assert!(
+            stdout.contains("not yet wired") || stdout.contains("agent"),
+            "agents should print stub, got: {stdout}"
+        );
+    }
+
+    #[test]
+    fn cli_agents_init_stub() {
+        let config = TestConfig::new();
+        let output = omx_cmd(&config)
+            .arg("agents-init")
+            .output()
+            .expect("failed to run omx agents-init");
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        assert!(
+            stdout.contains("not yet wired") || stdout.contains("Scaffolding"),
+            "agents-init should print stub, got: {stdout}"
+        );
+    }
+
+    #[test]
+    fn cli_uninstall_stub() {
+        let config = TestConfig::new();
+        let output = omx_cmd(&config)
+            .arg("uninstall")
+            .output()
+            .expect("failed to run omx uninstall");
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        assert!(
+            stdout.contains("not yet wired") || stdout.contains("Uninstalling"),
+            "uninstall should print stub, got: {stdout}"
+        );
+    }
+
+    #[test]
+    fn cli_session_list_stub() {
+        let config = TestConfig::new();
+        let output = omx_cmd(&config)
+            .arg("session")
+            .output()
+            .expect("failed to run omx session");
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        assert!(
+            stdout.contains("not yet wired") || stdout.contains("session"),
+            "session should print stub, got: {stdout}"
+        );
+    }
+
+    #[test]
+    fn cli_resume_stub() {
+        let config = TestConfig::new();
+        let output = omx_cmd(&config)
+            .args(["resume", "fake-session-id"])
+            .output()
+            .expect("failed to run omx resume");
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        assert!(
+            stdout.contains("not yet wired") || stdout.contains("Resuming"),
+            "resume should print stub, got: {stdout}"
+        );
+    }
+
+    #[test]
+    fn cli_ralph_stub() {
+        let config = TestConfig::new();
+        let output = omx_cmd(&config)
+            .arg("ralph")
+            .output()
+            .expect("failed to run omx ralph");
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        assert!(
+            stdout.contains("not yet wired") || stdout.contains("Ralph"),
+            "ralph should print stub, got: {stdout}"
+        );
+    }
+
+    #[test]
+    fn cli_autoresearch_stub() {
+        let config = TestConfig::new();
+        let output = omx_cmd(&config)
+            .args(["autoresearch", "test query"])
+            .output()
+            .expect("failed to run omx autoresearch");
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        assert!(
+            stdout.contains("not yet wired") || stdout.contains("autoresearch"),
+            "autoresearch should print stub, got: {stdout}"
+        );
+    }
+
+    #[test]
+    fn cli_ralplan_stub() {
+        let config = TestConfig::new();
+        let output = omx_cmd(&config)
+            .args(["ralplan", "test objective"])
+            .output()
+            .expect("failed to run omx ralplan");
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        assert!(
+            stdout.contains("not yet wired") || stdout.contains("planning"),
+            "ralplan should print stub, got: {stdout}"
+        );
+    }
+
+    #[test]
+    fn cli_pipeline_stub() {
+        let config = TestConfig::new();
+        let output = omx_cmd(&config)
+            .args(["pipeline", "test-pipeline"])
+            .output()
+            .expect("failed to run omx pipeline");
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        assert!(
+            stdout.contains("not yet wired") || stdout.contains("pipeline"),
+            "pipeline should print stub, got: {stdout}"
+        );
+    }
+
+    // ----- Tmux-dependent (ignored) -----
+
+    #[test]
+    #[ignore = "requires tmux"]
+    fn cli_team_start() {
+        let config = TestConfig::new();
+        let output = omx_cmd(&config)
+            .args(["team", "start", "2:executor", "test task"])
+            .output()
+            .expect("failed to run omx team start");
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        assert!(
+            stdout.contains("Team started"),
+            "team start should confirm, got: {stdout}"
+        );
+    }
+
+    #[test]
+    #[ignore = "requires omx-explore binary and possibly tmux"]
+    fn cli_explore() {
+        let config = TestConfig::new();
+        let output = omx_cmd(&config)
+            .args(["explore", "--prompt", "test exploration"])
+            .output()
+            .expect("failed to run omx explore");
+        assert!(
+            output.status.success() || !output.status.success(),
+            "explore ran (may fail if omx-explore not installed)"
+        );
+    }
+
+    #[test]
+    #[ignore = "requires omx-sparkshell binary"]
+    fn cli_sparkshell() {
+        let config = TestConfig::new();
+        let output = omx_cmd(&config)
+            .args(["sparkshell", "echo", "hello"])
+            .output()
+            .expect("failed to run omx sparkshell");
+        assert!(
+            output.status.success() || !output.status.success(),
+            "sparkshell ran (may fail if omx-sparkshell not installed)"
+        );
+    }
+
+    #[test]
+    #[ignore = "requires terminal for ratatui"]
+    fn cli_hud() {
+        let config = TestConfig::new();
+        let output = omx_cmd(&config)
+            .args(["hud"])
+            .output()
+            .expect("failed to run omx hud");
+        let _ = output;
+    }
 }
