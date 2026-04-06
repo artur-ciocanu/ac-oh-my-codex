@@ -4,21 +4,20 @@ use std::path::Path;
 pub enum CheckStatus {
     Ok,
     Missing,
-    Invalid,
-    Warning,
-    Info,
+    Invalid(String),
+    Warning(String),
+    Info(String),
 }
 
 #[derive(Debug)]
 pub struct CheckResult {
     pub name: String,
     pub status: CheckStatus,
-    pub message: Option<String>,
 }
 
 #[derive(Debug)]
 pub struct CheckGroup {
-    pub title: String,
+    pub name: &'static str,
     pub checks: Vec<CheckResult>,
 }
 
@@ -45,11 +44,6 @@ pub fn check_dependencies() -> CheckGroup {
         } else {
             CheckStatus::Missing
         },
-        message: if tmux_ok {
-            None
-        } else {
-            Some("install with: brew install tmux".into())
-        },
     });
 
     let codex_ok = std::process::Command::new("codex")
@@ -64,7 +58,6 @@ pub fn check_dependencies() -> CheckGroup {
         } else {
             CheckStatus::Missing
         },
-        message: None,
     });
 
     let claude_ok = std::process::Command::new("claude")
@@ -79,11 +72,10 @@ pub fn check_dependencies() -> CheckGroup {
         } else {
             CheckStatus::Missing
         },
-        message: None,
     });
 
     CheckGroup {
-        title: "Dependencies".into(),
+        name: "Dependencies",
         checks,
     }
 }
@@ -106,12 +98,11 @@ pub fn check_mcp_servers() -> CheckGroup {
             } else {
                 CheckStatus::Missing
             },
-            message: None,
         })
         .collect();
 
     CheckGroup {
-        title: "MCP Servers".into(),
+        name: "MCP Servers",
         checks,
     }
 }
@@ -134,12 +125,11 @@ pub fn check_notification_binaries() -> CheckGroup {
             } else {
                 CheckStatus::Missing
             },
-            message: None,
         })
         .collect();
 
     CheckGroup {
-        title: "Notification Binaries".into(),
+        name: "Notification Hooks",
         checks,
     }
 }
@@ -150,31 +140,30 @@ pub fn check_configuration(codex_home: &Path) -> CheckGroup {
 
     if !config_path.exists() {
         checks.push(CheckResult {
-            name: "config.toml".into(),
+            name: "config.toml exists".into(),
             status: CheckStatus::Missing,
-            message: Some(format!(
-                "expected at {}",
-                config_path.display()
-            )),
         });
     } else {
+        checks.push(CheckResult {
+            name: "config.toml exists".into(),
+            status: CheckStatus::Ok,
+        });
+
         let content = std::fs::read_to_string(&config_path).unwrap_or_default();
         match toml::from_str::<toml::Value>(&content) {
             Ok(_) => checks.push(CheckResult {
-                name: "config.toml".into(),
+                name: "config.toml schema valid".into(),
                 status: CheckStatus::Ok,
-                message: None,
             }),
             Err(e) => checks.push(CheckResult {
-                name: "config.toml".into(),
-                status: CheckStatus::Invalid,
-                message: Some(format!("TOML parse error: {e}")),
+                name: "config.toml schema valid".into(),
+                status: CheckStatus::Invalid(format!("TOML parse error: {e}")),
             }),
         }
     }
 
     CheckGroup {
-        title: "Configuration".into(),
+        name: "Configuration",
         checks,
     }
 }
@@ -186,11 +175,10 @@ pub fn check_hooks(codex_home: &Path) -> CheckGroup {
     if !hooks_dir.exists() {
         checks.push(CheckResult {
             name: ".omx/hooks/".into(),
-            status: CheckStatus::Info,
-            message: Some("directory not found — hooks are optional".into()),
+            status: CheckStatus::Info("directory not found — hooks are optional".into()),
         });
         return CheckGroup {
-            title: "Hooks".into(),
+            name: "Hooks",
             checks,
         };
     }
@@ -202,8 +190,7 @@ pub fn check_hooks(codex_home: &Path) -> CheckGroup {
     let count = entries.len();
     checks.push(CheckResult {
         name: ".omx/hooks/".into(),
-        status: CheckStatus::Ok,
-        message: Some(format!("{count} file(s) found")),
+        status: CheckStatus::Info(format!("{count} file(s) found")),
     });
 
     #[cfg(unix)]
@@ -211,7 +198,7 @@ pub fn check_hooks(codex_home: &Path) -> CheckGroup {
         use std::os::unix::fs::PermissionsExt;
         for entry in &entries {
             let path = entry.path();
-            let name = path
+            let fname = path
                 .file_name()
                 .and_then(|n| n.to_str())
                 .unwrap_or("?")
@@ -220,16 +207,11 @@ pub fn check_hooks(codex_home: &Path) -> CheckGroup {
                 let mode = meta.permissions().mode();
                 let executable = mode & 0o111 != 0;
                 checks.push(CheckResult {
-                    name: format!("hooks/{name}"),
+                    name: format!("hooks/{fname}"),
                     status: if executable {
                         CheckStatus::Ok
                     } else {
-                        CheckStatus::Warning
-                    },
-                    message: if executable {
-                        None
-                    } else {
-                        Some("not executable — run: chmod +x".into())
+                        CheckStatus::Warning("not executable — run: chmod +x".into())
                     },
                 });
             }
@@ -237,7 +219,7 @@ pub fn check_hooks(codex_home: &Path) -> CheckGroup {
     }
 
     CheckGroup {
-        title: "Hooks".into(),
+        name: "Hooks",
         checks,
     }
 }
@@ -250,8 +232,7 @@ pub fn check_ts_migration(codex_home: &Path) -> CheckGroup {
     if ts_config.exists() {
         checks.push(CheckResult {
             name: ".omx-config.json".into(),
-            status: CheckStatus::Warning,
-            message: Some(
+            status: CheckStatus::Warning(
                 "TypeScript-era config detected — migrate to config.toml".into(),
             ),
         });
@@ -259,7 +240,6 @@ pub fn check_ts_migration(codex_home: &Path) -> CheckGroup {
         checks.push(CheckResult {
             name: ".omx-config.json".into(),
             status: CheckStatus::Ok,
-            message: Some("not present (good)".into()),
         });
     }
 
@@ -286,13 +266,11 @@ pub fn check_ts_migration(codex_home: &Path) -> CheckGroup {
         checks.push(CheckResult {
             name: "sessions/rollout-*.jsonl".into(),
             status: CheckStatus::Ok,
-            message: Some("no legacy rollout files found (good)".into()),
         });
     } else {
         checks.push(CheckResult {
             name: "sessions/rollout-*.jsonl".into(),
-            status: CheckStatus::Warning,
-            message: Some(format!(
+            status: CheckStatus::Warning(format!(
                 "{} legacy rollout file(s) found — consider migrating",
                 rollout_files.len()
             )),
@@ -300,7 +278,7 @@ pub fn check_ts_migration(codex_home: &Path) -> CheckGroup {
     }
 
     CheckGroup {
-        title: "TypeScript Migration".into(),
+        name: "TS Migration",
         checks,
     }
 }
@@ -309,9 +287,18 @@ fn status_label(status: &CheckStatus) -> &'static str {
     match status {
         CheckStatus::Ok => "ok     ",
         CheckStatus::Missing => "MISSING",
-        CheckStatus::Invalid => "INVALID",
-        CheckStatus::Warning => "WARNING",
-        CheckStatus::Info => "info   ",
+        CheckStatus::Invalid(_) => "INVALID",
+        CheckStatus::Warning(_) => "WARNING",
+        CheckStatus::Info(_) => "info   ",
+    }
+}
+
+fn status_message(status: &CheckStatus) -> Option<&str> {
+    match status {
+        CheckStatus::Ok | CheckStatus::Missing => None,
+        CheckStatus::Invalid(msg) | CheckStatus::Warning(msg) | CheckStatus::Info(msg) => {
+            Some(msg.as_str())
+        }
     }
 }
 
@@ -330,14 +317,14 @@ pub fn run_doctor(codex_home: &Path) -> bool {
     let mut all_ok = true;
 
     for group in &groups {
-        println!("  {}", group.title);
+        println!("  {}", group.name);
         for check in &group.checks {
             let label = status_label(&check.status);
-            match &check.message {
+            match status_message(&check.status) {
                 Some(msg) => println!("    {} {} — {}", label, check.name, msg),
                 None => println!("    {} {}", label, check.name),
             }
-            if check.status == CheckStatus::Missing || check.status == CheckStatus::Invalid {
+            if matches!(check.status, CheckStatus::Missing | CheckStatus::Invalid(_)) {
                 all_ok = false;
             }
         }
@@ -370,18 +357,18 @@ mod tests {
             check_ts_migration(dir.path()),
         ];
         assert_eq!(groups.len(), 6);
-        assert_eq!(groups[0].title, "Dependencies");
-        assert_eq!(groups[1].title, "MCP Servers");
-        assert_eq!(groups[2].title, "Notification Binaries");
-        assert_eq!(groups[3].title, "Configuration");
-        assert_eq!(groups[4].title, "Hooks");
-        assert_eq!(groups[5].title, "TypeScript Migration");
+        assert_eq!(groups[0].name, "Dependencies");
+        assert_eq!(groups[1].name, "MCP Servers");
+        assert_eq!(groups[2].name, "Notification Hooks");
+        assert_eq!(groups[3].name, "Configuration");
+        assert_eq!(groups[4].name, "Hooks");
+        assert_eq!(groups[5].name, "TS Migration");
 
         // Dependencies group has exactly 3 checks
         assert_eq!(groups[0].checks.len(), 3);
         // MCP Servers group has exactly 5 checks
         assert_eq!(groups[1].checks.len(), 5);
-        // Notification Binaries group has exactly 5 checks
+        // Notification Hooks group has exactly 5 checks
         assert_eq!(groups[2].checks.len(), 5);
     }
 
@@ -393,7 +380,12 @@ mod tests {
         let group = check_ts_migration(dir.path());
         let ts_check = group.checks.iter().find(|c| c.name == ".omx-config.json");
         assert!(ts_check.is_some());
-        assert_eq!(ts_check.unwrap().status, CheckStatus::Warning);
+        match &ts_check.unwrap().status {
+            CheckStatus::Warning(msg) => {
+                assert!(msg.contains("TypeScript-era config detected"));
+            }
+            other => panic!("expected Warning, got {:?}", other),
+        }
     }
 
     #[test]
@@ -410,9 +402,12 @@ mod tests {
             .iter()
             .find(|c| c.name == "sessions/rollout-*.jsonl");
         assert!(rollout_check.is_some());
-        assert_eq!(rollout_check.unwrap().status, CheckStatus::Warning);
-        let msg = rollout_check.unwrap().message.as_deref().unwrap_or("");
-        assert!(msg.contains("2"), "expected count 2 in message: {msg}");
+        match &rollout_check.unwrap().status {
+            CheckStatus::Warning(msg) => {
+                assert!(msg.contains("2"), "expected count 2 in message: {msg}");
+            }
+            other => panic!("expected Warning, got {:?}", other),
+        }
     }
 
     #[test]
@@ -442,9 +437,21 @@ mod tests {
         .unwrap();
 
         let group = check_configuration(dir.path());
-        let check = group.checks.iter().find(|c| c.name == "config.toml");
-        assert!(check.is_some());
-        assert_eq!(check.unwrap().status, CheckStatus::Invalid);
+        // Should have 2 checks: exists + schema valid
+        assert_eq!(group.checks.len(), 2);
+
+        let exists_check = &group.checks[0];
+        assert_eq!(exists_check.name, "config.toml exists");
+        assert_eq!(exists_check.status, CheckStatus::Ok);
+
+        let schema_check = &group.checks[1];
+        assert_eq!(schema_check.name, "config.toml schema valid");
+        match &schema_check.status {
+            CheckStatus::Invalid(msg) => {
+                assert!(msg.contains("TOML parse error"));
+            }
+            other => panic!("expected Invalid, got {:?}", other),
+        }
     }
 
     #[test]
@@ -457,8 +464,15 @@ mod tests {
         .unwrap();
 
         let group = check_configuration(dir.path());
-        let check = group.checks.iter().find(|c| c.name == "config.toml");
-        assert!(check.is_some());
-        assert_eq!(check.unwrap().status, CheckStatus::Ok);
+        // Should have 2 checks: exists + schema valid
+        assert_eq!(group.checks.len(), 2);
+
+        let exists_check = &group.checks[0];
+        assert_eq!(exists_check.name, "config.toml exists");
+        assert_eq!(exists_check.status, CheckStatus::Ok);
+
+        let schema_check = &group.checks[1];
+        assert_eq!(schema_check.name, "config.toml schema valid");
+        assert_eq!(schema_check.status, CheckStatus::Ok);
     }
 }
