@@ -12,6 +12,7 @@ omx-mux = { path = "../omx-mux" }
 omx-state = { path = "../omx-state" }
 omx-hooks = { path = "../omx-hooks" }
 omx-config = { path = "../omx-config" }
+fs2 = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }

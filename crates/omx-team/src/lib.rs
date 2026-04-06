@@ -1,8 +1,14 @@
 pub mod allocation;
+pub mod approvals;
+pub mod auto_commit;
 pub mod commit_hygiene;
 pub mod config;
 pub mod dispatch;
+pub mod events;
+pub mod heartbeat;
+pub mod locks;
 pub mod mailbox;
+pub mod merge_strategy;
 pub mod orchestrator;
 pub mod phase_controller;
 pub mod role_router;

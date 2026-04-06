@@ -9,6 +9,11 @@ pub struct TeamConfig {
     pub governance: TeamGovernance,
     pub worktree_mode: WorktreeMode,
     pub dispatch_mode: DispatchMode,
+    pub heartbeat_interval_secs: u64,
+    pub heartbeat_stale_secs: u64,
+    pub merge_strategy: crate::merge_strategy::MergeStrategy,
+    pub auto_commit: crate::auto_commit::AutoCommitConfig,
+    pub approval_required: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -87,6 +92,11 @@ pub fn parse_team_spec(
         governance: TeamGovernance::default(),
         worktree_mode: WorktreeMode::PerWorker,
         dispatch_mode: DispatchMode::Tmux,
+        heartbeat_interval_secs: 30,
+        heartbeat_stale_secs: 90,
+        merge_strategy: crate::merge_strategy::MergeStrategy::default(),
+        auto_commit: crate::auto_commit::AutoCommitConfig::default(),
+        approval_required: false,
     })
 }
 
@@ -126,5 +136,33 @@ mod tests {
     fn parse_team_spec_zero_workers_errors() {
         let result = parse_team_spec(0, "executor", "task", None);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn team_config_with_heartbeat_defaults() {
+        let config = parse_team_spec(1, "executor", "task", None).unwrap();
+        assert_eq!(config.heartbeat_interval_secs, 30);
+        assert_eq!(config.heartbeat_stale_secs, 90);
+    }
+
+    #[test]
+    fn team_config_with_merge_strategy() {
+        let config = parse_team_spec(1, "executor", "task", None).unwrap();
+        assert_eq!(
+            config.merge_strategy,
+            crate::merge_strategy::MergeStrategy::Merge
+        );
+    }
+
+    #[test]
+    fn team_config_with_auto_commit() {
+        let config = parse_team_spec(1, "executor", "task", None).unwrap();
+        assert!(config.auto_commit.enabled);
+    }
+
+    #[test]
+    fn team_config_approval_required_defaults_false() {
+        let config = parse_team_spec(1, "executor", "task", None).unwrap();
+        assert!(!config.approval_required);
     }
 }
