@@ -391,6 +391,96 @@ pub fn parse_evaluator_result(raw: &str) -> Result<AutoresearchEvaluatorResult, 
 }
 
 // ---------------------------------------------------------------------------
+// Decision logic
+// ---------------------------------------------------------------------------
+
+pub fn decide_outcome(
+    manifest: &AutoresearchRunManifest,
+    candidate: &AutoresearchCandidateArtifact,
+    evaluation: &AutoresearchEvaluationRecord,
+) -> (AutoresearchDecisionStatus, String) {
+    // Check candidate status first
+    match candidate.status {
+        AutoresearchCandidateStatus::Abort => {
+            return (
+                AutoresearchDecisionStatus::Abort,
+                "candidate aborted".into(),
+            )
+        }
+        AutoresearchCandidateStatus::Noop => {
+            return (
+                AutoresearchDecisionStatus::Noop,
+                "candidate produced no changes".into(),
+            )
+        }
+        AutoresearchCandidateStatus::Interrupted => {
+            return (
+                AutoresearchDecisionStatus::Interrupted,
+                "candidate was interrupted".into(),
+            )
+        }
+        AutoresearchCandidateStatus::Candidate => {}
+    }
+
+    // Check for evaluation errors
+    if evaluation.parse_error.is_some() {
+        return (
+            AutoresearchDecisionStatus::Error,
+            "evaluator output could not be parsed".into(),
+        );
+    }
+
+    let pass = match evaluation.pass {
+        Some(p) => p,
+        None => {
+            return (
+                AutoresearchDecisionStatus::Error,
+                "evaluator did not return pass status".into(),
+            )
+        }
+    };
+
+    if !pass {
+        return (
+            AutoresearchDecisionStatus::Discard,
+            "evaluator reported failure".into(),
+        );
+    }
+
+    // pass=true from here
+    match (evaluation.score, manifest.last_kept_score) {
+        (Some(eval_score), Some(kept_score)) => {
+            if eval_score > kept_score {
+                (
+                    AutoresearchDecisionStatus::Keep,
+                    format!("score improved: {} -> {}", kept_score, eval_score),
+                )
+            } else {
+                (
+                    AutoresearchDecisionStatus::Discard,
+                    format!(
+                        "score did not improve: {} vs kept {}",
+                        eval_score, kept_score
+                    ),
+                )
+            }
+        }
+        (Some(eval_score), None) => (
+            AutoresearchDecisionStatus::Keep,
+            format!("first scored iteration: {}", eval_score),
+        ),
+        (None, Some(_)) => (
+            AutoresearchDecisionStatus::Ambiguous,
+            "pass but no score to compare against kept score".into(),
+        ),
+        (None, None) => (
+            AutoresearchDecisionStatus::Keep,
+            "pass with no scores tracked".into(),
+        ),
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -568,5 +658,146 @@ mod tests {
         assert_eq!(tag.len(), 16);
         assert!(tag.contains('T'));
         assert!(tag.ends_with('Z'));
+    }
+
+    // -- Task 8: Decision logic --
+
+    fn make_manifest(last_kept_score: Option<f64>) -> AutoresearchRunManifest {
+        AutoresearchRunManifest {
+            schema_version: 1,
+            run_id: "test".into(),
+            run_tag: "20260405T000000Z".into(),
+            run_dir: PathBuf::from("/tmp/run"),
+            repo_root: PathBuf::from("/tmp/repo"),
+            worktree_path: PathBuf::from("/tmp/wt"),
+            mission_slug: "test-mission".into(),
+            status: AutoresearchRunStatus::Running,
+            iteration: 1,
+            baseline_pass: Some(true),
+            baseline_score: Some(0.5),
+            last_kept_commit: Some("abc123".into()),
+            last_kept_score,
+            created_at: "2026-04-05T00:00:00Z".into(),
+            updated_at: "2026-04-05T00:00:00Z".into(),
+        }
+    }
+
+    fn make_candidate(status: AutoresearchCandidateStatus) -> AutoresearchCandidateArtifact {
+        AutoresearchCandidateArtifact {
+            status,
+            candidate_commit: Some("def456".into()),
+            base_commit: Some("abc123".into()),
+            description: Some("test candidate".into()),
+            notes: vec![],
+            created_at: "2026-04-05T00:00:00Z".into(),
+        }
+    }
+
+    fn make_eval(
+        pass: Option<bool>,
+        score: Option<f64>,
+        parse_error: Option<String>,
+    ) -> AutoresearchEvaluationRecord {
+        AutoresearchEvaluationRecord {
+            command: "cargo test".into(),
+            ran_at: "2026-04-05T00:00:00Z".into(),
+            status: "completed".into(),
+            pass,
+            score,
+            exit_code: Some(0),
+            stdout: None,
+            stderr: None,
+            parse_error,
+        }
+    }
+
+    #[test]
+    fn decide_outcome_abort() {
+        let m = make_manifest(Some(0.5));
+        let c = make_candidate(AutoresearchCandidateStatus::Abort);
+        let e = make_eval(Some(true), Some(0.8), None);
+        let (status, _) = decide_outcome(&m, &c, &e);
+        assert_eq!(status, AutoresearchDecisionStatus::Abort);
+    }
+
+    #[test]
+    fn decide_outcome_noop() {
+        let m = make_manifest(Some(0.5));
+        let c = make_candidate(AutoresearchCandidateStatus::Noop);
+        let e = make_eval(Some(true), Some(0.8), None);
+        let (status, _) = decide_outcome(&m, &c, &e);
+        assert_eq!(status, AutoresearchDecisionStatus::Noop);
+    }
+
+    #[test]
+    fn decide_outcome_interrupted() {
+        let m = make_manifest(Some(0.5));
+        let c = make_candidate(AutoresearchCandidateStatus::Interrupted);
+        let e = make_eval(Some(true), Some(0.8), None);
+        let (status, _) = decide_outcome(&m, &c, &e);
+        assert_eq!(status, AutoresearchDecisionStatus::Interrupted);
+    }
+
+    #[test]
+    fn decide_outcome_error_eval() {
+        let m = make_manifest(Some(0.5));
+        let c = make_candidate(AutoresearchCandidateStatus::Candidate);
+        let e = make_eval(None, None, Some("bad json".into()));
+        let (status, _) = decide_outcome(&m, &c, &e);
+        assert_eq!(status, AutoresearchDecisionStatus::Error);
+    }
+
+    #[test]
+    fn decide_outcome_pass_only_keeps() {
+        let m = make_manifest(None);
+        let c = make_candidate(AutoresearchCandidateStatus::Candidate);
+        let e = make_eval(Some(true), None, None);
+        let (status, _) = decide_outcome(&m, &c, &e);
+        assert_eq!(status, AutoresearchDecisionStatus::Keep);
+    }
+
+    #[test]
+    fn decide_outcome_pass_only_fail_discards() {
+        let m = make_manifest(None);
+        let c = make_candidate(AutoresearchCandidateStatus::Candidate);
+        let e = make_eval(Some(false), None, None);
+        let (status, _) = decide_outcome(&m, &c, &e);
+        assert_eq!(status, AutoresearchDecisionStatus::Discard);
+    }
+
+    #[test]
+    fn decide_outcome_score_improvement_better_keeps() {
+        let m = make_manifest(Some(0.5));
+        let c = make_candidate(AutoresearchCandidateStatus::Candidate);
+        let e = make_eval(Some(true), Some(0.8), None);
+        let (status, _) = decide_outcome(&m, &c, &e);
+        assert_eq!(status, AutoresearchDecisionStatus::Keep);
+    }
+
+    #[test]
+    fn decide_outcome_score_improvement_worse_discards() {
+        let m = make_manifest(Some(0.8));
+        let c = make_candidate(AutoresearchCandidateStatus::Candidate);
+        let e = make_eval(Some(true), Some(0.5), None);
+        let (status, _) = decide_outcome(&m, &c, &e);
+        assert_eq!(status, AutoresearchDecisionStatus::Discard);
+    }
+
+    #[test]
+    fn decide_outcome_equal_discards() {
+        let m = make_manifest(Some(0.5));
+        let c = make_candidate(AutoresearchCandidateStatus::Candidate);
+        let e = make_eval(Some(true), Some(0.5), None);
+        let (status, _) = decide_outcome(&m, &c, &e);
+        assert_eq!(status, AutoresearchDecisionStatus::Discard);
+    }
+
+    #[test]
+    fn decide_outcome_no_scores_ambiguous() {
+        let m = make_manifest(Some(0.5));
+        let c = make_candidate(AutoresearchCandidateStatus::Candidate);
+        let e = make_eval(Some(true), None, None);
+        let (status, _) = decide_outcome(&m, &c, &e);
+        assert_eq!(status, AutoresearchDecisionStatus::Ambiguous);
     }
 }
