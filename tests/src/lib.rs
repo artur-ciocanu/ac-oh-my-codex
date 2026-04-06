@@ -16,6 +16,12 @@ pub struct TestConfig {
     pub dir: tempfile::TempDir,
 }
 
+impl Default for TestConfig {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl TestConfig {
     /// Create a minimal valid OMX config directory.
     pub fn new() -> Self {
