@@ -76,7 +76,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn notify_telegram_produces_structured_output() {
+    async fn notify_telegram_sends_html() {
         // Telegram hardcodes https://api.telegram.org so we cannot redirect via wiremock.
         // We verify the binary produces structured JSON output with the correct hook name.
         let event = session_start_event();
@@ -96,7 +96,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn notify_pushover_produces_structured_output() {
+    async fn notify_pushover_sends_form() {
         // Pushover hardcodes https://api.pushover.net so we cannot redirect via wiremock.
         // We verify the binary produces structured JSON output with the correct hook name.
         let event = session_start_event();
