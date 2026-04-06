@@ -1,5 +1,7 @@
 mod cleanup;
+mod doctor;
 mod launch;
+mod migrate;
 
 use clap::{Parser, Subcommand};
 use omx_config::ConfigLoader;
@@ -128,6 +130,11 @@ enum Commands {
         #[arg(long)]
         effort: Option<String>,
     },
+    /// Migrate TS-era config and session data to Rust format
+    Migrate {
+        #[command(subcommand)]
+        action: MigrateAction,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -214,6 +221,37 @@ enum HookApiAction {
     SessionRead,
 }
 
+#[derive(Debug, Subcommand)]
+enum MigrateAction {
+    /// Convert .omx-config.json to config.toml
+    Config {
+        /// Show what would change without writing
+        #[arg(long)]
+        dry_run: bool,
+        /// Overwrite existing config.toml values
+        #[arg(long)]
+        force: bool,
+    },
+    /// Convert rollout-*.jsonl to per-session directories
+    Sessions {
+        /// Show what would change without writing
+        #[arg(long)]
+        dry_run: bool,
+        /// Overwrite existing sessions
+        #[arg(long)]
+        force: bool,
+    },
+    /// Run both config and sessions migration
+    All {
+        /// Show what would change without writing
+        #[arg(long)]
+        dry_run: bool,
+        /// Overwrite existing data
+        #[arg(long)]
+        force: bool,
+    },
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt::init();
@@ -288,48 +326,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             println!("\nSetup complete.");
         }
         Some(Commands::Doctor) => {
-            println!("omx doctor — checking installation\n");
-            let tmux_ok = std::process::Command::new("tmux")
-                .arg("-V")
-                .output()
-                .map(|o| o.status.success())
-                .unwrap_or(false);
-            println!("  {} tmux", if tmux_ok { "ok" } else { "MISSING" });
-            let codex_ok = std::process::Command::new("codex")
-                .arg("--version")
-                .output()
-                .map(|o| o.status.success())
-                .unwrap_or(false);
-            println!("  {} codex", if codex_ok { "ok" } else { "MISSING" });
-            let claude_ok = std::process::Command::new("claude")
-                .arg("--version")
-                .output()
-                .map(|o| o.status.success())
-                .unwrap_or(false);
-            println!("  {} claude", if claude_ok { "ok" } else { "MISSING" });
-            let mcp_bins = [
-                "omx-mcp-state",
-                "omx-mcp-memory",
-                "omx-mcp-code-intel",
-                "omx-mcp-trace",
-                "omx-mcp-team",
-            ];
-            for bin in mcp_bins {
-                let ok = std::process::Command::new("which")
-                    .arg(bin)
-                    .output()
-                    .map(|o| o.status.success())
-                    .unwrap_or(false);
-                println!("  {} {bin}", if ok { "ok" } else { "MISSING" });
-            }
             let home = omx_config::default_codex_home();
-            let config_exists = home.join("config.toml").exists();
-            println!(
-                "  {} config.toml",
-                if config_exists { "ok" } else { "MISSING" }
-            );
-            if !tmux_ok {
-                println!("\n  tmux is required. Install with: brew install tmux");
+            let all_ok = doctor::run_doctor(&home);
+            if !all_ok {
+                std::process::exit(1);
             }
         }
         Some(Commands::Version) => {
@@ -689,6 +689,46 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             Some(e) => println!("Reasoning effort set to: {e}"),
             None => println!("Current reasoning effort: (default)"),
         },
+        Some(Commands::Migrate { action }) => {
+            let home = omx_config::default_codex_home();
+            match action {
+                MigrateAction::Config { dry_run, force } => {
+                    match migrate::migrate_config(&home, dry_run, force) {
+                        Ok(result) => migrate::print_config_result(&result, dry_run),
+                        Err(e) => {
+                            eprintln!("Config migration failed: {e}");
+                            std::process::exit(1);
+                        }
+                    }
+                }
+                MigrateAction::Sessions { dry_run, force } => {
+                    match migrate::migrate_sessions(&home, dry_run, force) {
+                        Ok(result) => migrate::print_sessions_result(&result, dry_run),
+                        Err(e) => {
+                            eprintln!("Session migration failed: {e}");
+                            std::process::exit(1);
+                        }
+                    }
+                }
+                MigrateAction::All { dry_run, force } => {
+                    match migrate::migrate_config(&home, dry_run, force) {
+                        Ok(result) => migrate::print_config_result(&result, dry_run),
+                        Err(e) => {
+                            eprintln!("Config migration failed: {e}");
+                            std::process::exit(1);
+                        }
+                    }
+                    println!();
+                    match migrate::migrate_sessions(&home, dry_run, force) {
+                        Ok(result) => migrate::print_sessions_result(&result, dry_run),
+                        Err(e) => {
+                            eprintln!("Session migration failed: {e}");
+                            std::process::exit(1);
+                        }
+                    }
+                }
+            }
+        }
     }
 
     Ok(())
