@@ -37,6 +37,39 @@ pub trait SetupGenerator: Send + Sync {
     fn copy_skills(&self, scope: SetupScope) -> Result<(), OmxError>;
 }
 
+pub fn embedded_prompt_names() -> Vec<&'static str> {
+    vec!["executor", "planner", "verifier", "architect", "reviewer"]
+}
+
+pub fn embedded_skill_names() -> Vec<&'static str> {
+    vec!["explore", "sparkshell", "deep-interview"]
+}
+
+const KNOWN_SECTIONS: &[&str] = &[
+    "model",
+    "model_reasoning_effort",
+    "models",
+    "notifications",
+    "team",
+    "features",
+    "agents",
+    "env_per_mode",
+    "mcp_servers",
+];
+
+/// Scan TOML content for top-level keys that are not in the known set.
+pub fn detect_orphaned_keys(toml_content: &str) -> Vec<String> {
+    let table: toml::Table = match toml::from_str(toml_content) {
+        Ok(t) => t,
+        Err(_) => return Vec::new(),
+    };
+    table
+        .keys()
+        .filter(|key| !KNOWN_SECTIONS.contains(&key.as_str()))
+        .cloned()
+        .collect()
+}
+
 pub struct DefaultSetupGenerator;
 
 impl SetupGenerator for DefaultSetupGenerator {
@@ -145,12 +178,56 @@ impl SetupGenerator for DefaultSetupGenerator {
     }
 
     fn copy_prompts(&self, scope: SetupScope) -> Result<(), OmxError> {
-        tracing::info!("copy_prompts: scope={scope:?} — embedded asset pipeline not yet wired");
+        let base = match scope {
+            SetupScope::User => omx_config::default_codex_home().join("prompts"),
+            SetupScope::Project => std::env::current_dir()
+                .map_err(OmxError::Io)?
+                .join(".omx")
+                .join("prompts"),
+        };
+        std::fs::create_dir_all(&base).map_err(OmxError::Io)?;
+        for name in embedded_prompt_names() {
+            let path = base.join(format!("{name}.md"));
+            if !path.exists() {
+                std::fs::write(
+                    &path,
+                    format!("# {name}\n\n> Placeholder prompt for {name} agent.\n"),
+                )
+                .map_err(OmxError::Io)?;
+            }
+        }
+        tracing::info!(
+            "copy_prompts: wrote {} prompts to {}",
+            embedded_prompt_names().len(),
+            base.display()
+        );
         Ok(())
     }
 
     fn copy_skills(&self, scope: SetupScope) -> Result<(), OmxError> {
-        tracing::info!("copy_skills: scope={scope:?} — embedded asset pipeline not yet wired");
+        let base = match scope {
+            SetupScope::User => omx_config::default_codex_home().join("skills"),
+            SetupScope::Project => std::env::current_dir()
+                .map_err(OmxError::Io)?
+                .join(".omx")
+                .join("skills"),
+        };
+        std::fs::create_dir_all(&base).map_err(OmxError::Io)?;
+        for name in embedded_skill_names() {
+            let path = base.join(format!("{name}.md"));
+            if !path.exists() {
+                std::fs::write(
+                    &path,
+                    format!("# {name}\n\n> Placeholder skill definition for {name}.\n"),
+                )
+                .map_err(OmxError::Io)?;
+            }
+        }
+        tracing::info!(
+            "copy_skills: wrote {} skills to {}",
+            embedded_skill_names().len(),
+            base.display()
+        );
         Ok(())
     }
 }
@@ -289,6 +366,18 @@ mod tests {
     }
 
     #[test]
+    fn embedded_prompts_list_is_not_empty() {
+        let prompts = embedded_prompt_names();
+        assert!(!prompts.is_empty());
+    }
+
+    #[test]
+    fn embedded_skills_list_is_not_empty() {
+        let skills = embedded_skill_names();
+        assert!(!skills.is_empty());
+    }
+
+    #[test]
     fn generate_agents_md_has_header_and_delegation() {
         let gen = DefaultSetupGenerator;
         let config = OmxConfig::default();
@@ -297,6 +386,59 @@ mod tests {
         assert!(
             result.contains("delegation"),
             "must mention delegation rules"
+        );
+    }
+
+    #[test]
+    fn detect_orphaned_keys_finds_unknown_sections() {
+        let toml_content = r#"
+model = "o3"
+
+[models]
+frontier = "o3"
+
+[unknown_section]
+key = "value"
+
+[notifications.discord]
+webhook_url = "https://example.com"
+
+[also_unknown]
+x = 1
+"#;
+        let orphans = detect_orphaned_keys(toml_content);
+        assert_eq!(orphans.len(), 2);
+        assert!(orphans.contains(&"unknown_section".to_string()));
+        assert!(orphans.contains(&"also_unknown".to_string()));
+    }
+
+    #[test]
+    fn detect_orphaned_keys_no_false_positives() {
+        let toml_content = r#"
+model = "o3"
+
+[models]
+frontier = "o3"
+
+[notifications.discord]
+webhook_url = "https://example.com"
+
+[team]
+default_workers = 3
+
+[features]
+experimental_hud = true
+
+[agents.overrides.architect]
+model = "o3"
+
+[env_per_mode.autopilot]
+MAX_TURNS = "50"
+"#;
+        let orphans = detect_orphaned_keys(toml_content);
+        assert!(
+            orphans.is_empty(),
+            "known sections should not be flagged: {orphans:?}"
         );
     }
 }

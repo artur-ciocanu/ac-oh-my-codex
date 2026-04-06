@@ -1,3 +1,7 @@
+pub mod git_context;
+pub mod mode_indicator;
+pub mod presets;
+
 use crossterm::{
     event::{self, Event, KeyCode, KeyEventKind},
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
@@ -18,6 +22,12 @@ pub struct HudState {
     pub pending_tasks: u32,
     pub completed_tasks: u32,
     pub uptime_seconds: u64,
+    pub active_mode: Option<String>,
+    pub git_branch: Option<String>,
+    pub git_dirty: bool,
+    pub turn_count: u64,
+    pub tokens_used: u64,
+    pub preset: crate::presets::HudPreset,
 }
 
 struct TerminalGuard;
@@ -29,6 +39,14 @@ impl Drop for TerminalGuard {
     }
 }
 
+/// Refresh HudState with live data (git context).
+pub fn refresh_state(state: &mut HudState) {
+    if let Some(ctx) = git_context::read_git_context() {
+        state.git_branch = Some(ctx.branch);
+        state.git_dirty = ctx.dirty;
+    }
+}
+
 pub async fn run_hud(initial_state: HudState) -> Result<(), Box<dyn std::error::Error>> {
     enable_raw_mode()?;
     stdout().execute(EnterAlternateScreen)?;
@@ -36,9 +54,10 @@ pub async fn run_hud(initial_state: HudState) -> Result<(), Box<dyn std::error::
 
     let backend = ratatui::backend::CrosstermBackend::new(stdout());
     let mut terminal = ratatui::Terminal::new(backend)?;
-    let state = initial_state;
+    let mut state = initial_state;
 
     loop {
+        refresh_state(&mut state);
         terminal.draw(|frame| {
             render_frame(&state, frame, frame.area());
         })?;
@@ -68,19 +87,34 @@ pub fn render_frame(state: &HudState, frame: &mut ratatui::Frame, area: ratatui:
         widgets::{Block, Borders, Paragraph},
     };
 
+    let layout = presets::preset_layout(state.preset);
+
     let chunks = Layout::vertical([
-        Constraint::Length(3), // header
-        Constraint::Length(5), // stats
-        Constraint::Min(0),    // spacer
+        Constraint::Length(layout.header_height),
+        Constraint::Length(layout.stats_height),
+        Constraint::Min(0),
     ])
     .split(area);
 
-    // Header
+    // Header with mode indicator
     let provider = state.provider.as_deref().unwrap_or("—");
     let model = state.model.as_deref().unwrap_or("—");
     let session = state.session_id.as_deref().unwrap_or("—");
+
+    let mode_span = if let Some(ref mode) = state.active_mode {
+        let ind = mode_indicator::indicator_for(mode);
+        Span::styled(
+            format!(" {} ", ind.label),
+            Style::default().fg(Color::Black).bg(ind.color),
+        )
+    } else {
+        Span::styled(" IDLE ", Style::default().fg(Color::Black).bg(Color::Gray))
+    };
+
     let header = Paragraph::new(Line::from(vec![
         Span::styled(" OMX ", Style::default().fg(Color::Black).bg(Color::Cyan)),
+        Span::raw(" "),
+        mode_span,
         Span::raw(format!("  {provider} / {model}  session: {session}")),
     ]))
     .block(Block::default().borders(Borders::BOTTOM));
@@ -94,7 +128,8 @@ pub fn render_frame(state: &HudState, frame: &mut ratatui::Frame, area: ratatui:
         .unwrap_or_else(|| "Idle".into());
     let uptime_min = state.uptime_seconds / 60;
     let uptime_sec = state.uptime_seconds % 60;
-    let stats = Paragraph::new(vec![
+
+    let mut lines = vec![
         Line::from(format!(
             "Phase: {}  Workers: {}",
             phase_str, state.worker_count
@@ -103,9 +138,25 @@ pub fn render_frame(state: &HudState, frame: &mut ratatui::Frame, area: ratatui:
             "Tasks: {} pending / {} completed",
             state.pending_tasks, state.completed_tasks
         )),
-        Line::from(format!("Uptime: {uptime_min}m {uptime_sec}s")),
-    ])
-    .block(Block::default().title(" Status ").borders(Borders::ALL));
+    ];
+
+    if layout.show_git {
+        let branch = state.git_branch.as_deref().unwrap_or("—");
+        let dirty = if state.git_dirty { "*" } else { "" };
+        lines.push(Line::from(format!("Git: {branch}{dirty}")));
+    }
+
+    if layout.show_tokens {
+        lines.push(Line::from(format!(
+            "Turns: {}  Tokens: {}",
+            state.turn_count, state.tokens_used
+        )));
+    }
+
+    lines.push(Line::from(format!("Uptime: {uptime_min}m {uptime_sec}s")));
+
+    let stats =
+        Paragraph::new(lines).block(Block::default().title(" Status ").borders(Borders::ALL));
     frame.render_widget(stats, chunks[1]);
 }
 
@@ -131,6 +182,12 @@ mod tests {
             pending_tasks: 5,
             completed_tasks: 2,
             uptime_seconds: 120,
+            active_mode: None,
+            git_branch: None,
+            git_dirty: false,
+            turn_count: 0,
+            tokens_used: 0,
+            preset: crate::presets::HudPreset::Standard,
         };
         let json = serde_json::to_string(&state).unwrap();
         let parsed: HudState = serde_json::from_str(&json).unwrap();
@@ -162,6 +219,12 @@ mod tests {
             pending_tasks: 5,
             completed_tasks: 2,
             uptime_seconds: 120,
+            active_mode: None,
+            git_branch: None,
+            git_dirty: false,
+            turn_count: 0,
+            tokens_used: 0,
+            preset: crate::presets::HudPreset::Standard,
         };
 
         let backend = TestBackend::new(80, 24);
@@ -186,5 +249,79 @@ mod tests {
         assert!(text.contains("codex"), "should show provider");
         assert!(text.contains("Exec"), "should show team phase");
         assert!(text.contains("3"), "should show worker count");
+    }
+
+    #[test]
+    fn render_frame_shows_mode_indicator() {
+        use ratatui::{backend::TestBackend, Terminal};
+
+        let state = HudState {
+            session_id: Some("sess-abc".into()),
+            provider: Some("codex".into()),
+            model: Some("o3".into()),
+            team_phase: Some(TeamPhase::Exec),
+            worker_count: 3,
+            pending_tasks: 5,
+            completed_tasks: 2,
+            uptime_seconds: 120,
+            active_mode: Some("autopilot".into()),
+            git_branch: Some("main".into()),
+            git_dirty: true,
+            turn_count: 42,
+            tokens_used: 15000,
+            preset: presets::HudPreset::Standard,
+        };
+
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal
+            .draw(|frame| {
+                render_frame(&state, frame, frame.area());
+            })
+            .unwrap();
+
+        let buf = terminal.backend().buffer().clone();
+        let text = (0..buf.area.height)
+            .map(|y| {
+                (0..buf.area.width)
+                    .map(|x| buf[(x, y)].symbol().to_string())
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        assert!(text.contains("AUTOPILOT"), "should show mode indicator");
+        assert!(text.contains("main"), "should show git branch");
+    }
+
+    #[test]
+    fn refresh_state_updates_git_context() {
+        let mut state = HudState::default();
+        assert!(state.git_branch.is_none());
+        refresh_state(&mut state);
+        // Tests run from within the repo, so git_branch should be populated
+        assert!(state.git_branch.is_some());
+    }
+
+    #[test]
+    fn hud_state_with_mode_and_git() {
+        let state = HudState {
+            session_id: Some("sess-1".into()),
+            provider: Some("codex".into()),
+            model: Some("o3".into()),
+            team_phase: Some(TeamPhase::Exec),
+            worker_count: 3,
+            pending_tasks: 5,
+            completed_tasks: 2,
+            uptime_seconds: 120,
+            active_mode: Some("autopilot".into()),
+            git_branch: Some("main".into()),
+            git_dirty: false,
+            turn_count: 42,
+            tokens_used: 15000,
+            preset: crate::presets::HudPreset::Standard,
+        };
+        assert_eq!(state.active_mode.as_deref(), Some("autopilot"));
+        assert_eq!(state.turn_count, 42);
     }
 }
