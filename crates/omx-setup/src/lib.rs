@@ -45,6 +45,31 @@ pub fn embedded_skill_names() -> Vec<&'static str> {
     vec!["explore", "sparkshell", "deep-interview"]
 }
 
+const KNOWN_SECTIONS: &[&str] = &[
+    "model",
+    "model_reasoning_effort",
+    "models",
+    "notifications",
+    "team",
+    "features",
+    "agents",
+    "env_per_mode",
+    "mcp_servers",
+];
+
+/// Scan TOML content for top-level keys that are not in the known set.
+pub fn detect_orphaned_keys(toml_content: &str) -> Vec<String> {
+    let table: toml::Table = match toml::from_str(toml_content) {
+        Ok(t) => t,
+        Err(_) => return Vec::new(),
+    };
+    table
+        .keys()
+        .filter(|key| !KNOWN_SECTIONS.contains(&key.as_str()))
+        .cloned()
+        .collect()
+}
+
 pub struct DefaultSetupGenerator;
 
 impl SetupGenerator for DefaultSetupGenerator {
@@ -361,6 +386,59 @@ mod tests {
         assert!(
             result.contains("delegation"),
             "must mention delegation rules"
+        );
+    }
+
+    #[test]
+    fn detect_orphaned_keys_finds_unknown_sections() {
+        let toml_content = r#"
+model = "o3"
+
+[models]
+frontier = "o3"
+
+[unknown_section]
+key = "value"
+
+[notifications.discord]
+webhook_url = "https://example.com"
+
+[also_unknown]
+x = 1
+"#;
+        let orphans = detect_orphaned_keys(toml_content);
+        assert_eq!(orphans.len(), 2);
+        assert!(orphans.contains(&"unknown_section".to_string()));
+        assert!(orphans.contains(&"also_unknown".to_string()));
+    }
+
+    #[test]
+    fn detect_orphaned_keys_no_false_positives() {
+        let toml_content = r#"
+model = "o3"
+
+[models]
+frontier = "o3"
+
+[notifications.discord]
+webhook_url = "https://example.com"
+
+[team]
+default_workers = 3
+
+[features]
+experimental_hud = true
+
+[agents.overrides.architect]
+model = "o3"
+
+[env_per_mode.autopilot]
+MAX_TURNS = "50"
+"#;
+        let orphans = detect_orphaned_keys(toml_content);
+        assert!(
+            orphans.is_empty(),
+            "known sections should not be flagged: {orphans:?}"
         );
     }
 }
