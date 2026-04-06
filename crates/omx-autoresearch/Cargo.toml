@@ -1,0 +1,16 @@
+[package]
+name = "omx-autoresearch"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+omx-types = { path = "../omx-types" }
+omx-modes = { path = "../omx-modes" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+chrono = { workspace = true }
+tokio = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

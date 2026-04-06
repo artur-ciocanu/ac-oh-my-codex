@@ -279,6 +279,18 @@ pub enum OmxError {
 
     #[error("catalog error: {0}")]
     Catalog(String),
+
+    #[error("ralplan error: {0}")]
+    Ralplan(String),
+
+    #[error("ralph error: {0}")]
+    Ralph(String),
+
+    #[error("autoresearch error: {0}")]
+    Autoresearch(String),
+
+    #[error("pipeline error: {0}")]
+    Pipeline(String),
 }
 
 // ---------------------------------------------------------------------------
@@ -420,5 +432,29 @@ mod tests {
     fn catalog_error_display() {
         let err = OmxError::Catalog("missing field".into());
         assert_eq!(err.to_string(), "catalog error: missing field");
+    }
+
+    #[test]
+    fn ralplan_error_display() {
+        let err = OmxError::Ralplan("consensus failed".into());
+        assert_eq!(err.to_string(), "ralplan error: consensus failed");
+    }
+
+    #[test]
+    fn ralph_error_display() {
+        let err = OmxError::Ralph("invalid phase".into());
+        assert_eq!(err.to_string(), "ralph error: invalid phase");
+    }
+
+    #[test]
+    fn autoresearch_error_display() {
+        let err = OmxError::Autoresearch("mission not found".into());
+        assert_eq!(err.to_string(), "autoresearch error: mission not found");
+    }
+
+    #[test]
+    fn pipeline_error_display() {
+        let err = OmxError::Pipeline("stage failed".into());
+        assert_eq!(err.to_string(), "pipeline error: stage failed");
     }
 }

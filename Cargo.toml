@@ -30,6 +30,11 @@ members = [
   "crates/omx-modes",
   "crates/omx-session",
   "crates/omx-catalog",
+  # Orchestration engines (Phase 8)
+  "crates/omx-ralplan",
+  "crates/omx-ralph",
+  "crates/omx-autoresearch",
+  "crates/omx-pipeline",
 ]
 resolver = "2"
 

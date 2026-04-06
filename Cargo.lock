@@ -1148,6 +1148,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "omx-autoresearch"
+version = "0.11.13"
+dependencies = [
+ "chrono",
+ "omx-modes",
+ "omx-types",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+]
+
+[[package]]
 name = "omx-catalog"
 version = "0.11.13"
 dependencies = [
@@ -1368,6 +1381,48 @@ dependencies = [
  "serde_json",
  "tokio",
  "tracing",
+]
+
+[[package]]
+name = "omx-pipeline"
+version = "0.11.13"
+dependencies = [
+ "async-trait",
+ "chrono",
+ "omx-modes",
+ "omx-ralph",
+ "omx-ralplan",
+ "omx-types",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+]
+
+[[package]]
+name = "omx-ralph"
+version = "0.11.13"
+dependencies = [
+ "chrono",
+ "omx-state",
+ "omx-types",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+]
+
+[[package]]
+name = "omx-ralplan"
+version = "0.11.13"
+dependencies = [
+ "async-trait",
+ "chrono",
+ "omx-modes",
+ "omx-types",
+ "serde",
+ "serde_json",
+ "tokio",
 ]
 
 [[package]]
