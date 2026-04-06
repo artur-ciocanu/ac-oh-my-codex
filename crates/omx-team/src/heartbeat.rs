@@ -82,7 +82,7 @@ pub fn find_stale_workers(
         if path
             .file_name()
             .and_then(|n| n.to_str())
-            .map_or(false, |n| n.ends_with(".heartbeat.json"))
+            .is_some_and(|n| n.ends_with(".heartbeat.json"))
         {
             let data = std::fs::read_to_string(&path)?;
             let hb: WorkerHeartbeat = serde_json::from_str(&data)?;
