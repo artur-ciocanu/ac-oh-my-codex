@@ -12,6 +12,7 @@ path = "src/main.rs"
 
 [dependencies]
 omx-types = { path = "../omx-types" }
+omx-notify-template = { path = "../omx-notify-template" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 reqwest = { workspace = true }
