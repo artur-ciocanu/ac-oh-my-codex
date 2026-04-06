@@ -1,6 +1,14 @@
+pub mod hud_pane;
+pub mod leader_guard;
+pub mod pane_registry;
+pub mod resize_hook;
 mod tmux;
+pub mod trust_dismiss;
 mod types;
 
+pub use hud_pane::HudPaneState;
+pub use leader_guard::LeaderGuard;
+pub use pane_registry::PaneRegistry;
 pub use tmux::{build_capture_pane_args, TmuxAdapter};
 pub use types::*;
 

@@ -1342,6 +1342,7 @@ dependencies = [
 name = "omx-mux"
 version = "0.11.13"
 dependencies = [
+ "chrono",
  "omx-types",
  "serde",
  "serde_json",

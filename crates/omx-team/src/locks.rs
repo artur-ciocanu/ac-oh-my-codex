@@ -52,9 +52,7 @@ impl TeamFileLock {
             .truncate(false)
             .open(&path)?;
         file.try_lock_exclusive().map_err(|e| {
-            OmxError::Team(format!(
-                "lock already held for worker '{worker_name}': {e}"
-            ))
+            OmxError::Team(format!("lock already held for worker '{worker_name}': {e}"))
         })?;
         Ok(Self {
             file: Some(file),
@@ -135,7 +133,10 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let _lock = TeamFileLock::acquire(dir.path(), "worker-1").unwrap();
         let result = TeamFileLock::try_acquire(dir.path(), "worker-1");
-        assert!(result.is_err(), "expected try_acquire to fail while lock is held");
+        assert!(
+            result.is_err(),
+            "expected try_acquire to fail while lock is held"
+        );
     }
 
     #[test]
@@ -154,7 +155,11 @@ mod tests {
         let lock = TeamFileLock::acquire(dir.path(), "my-worker").unwrap();
         let path = lock.lock_path().to_owned();
         assert!(
-            path.file_name().unwrap().to_str().unwrap().contains("my-worker"),
+            path.file_name()
+                .unwrap()
+                .to_str()
+                .unwrap()
+                .contains("my-worker"),
             "lock path should contain worker name"
         );
         assert!(

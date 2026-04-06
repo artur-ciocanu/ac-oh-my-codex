@@ -1,3 +1,7 @@
+pub mod aggregator;
+pub mod builtins;
+pub mod chain;
+
 use std::path::{Path, PathBuf};
 
 use async_trait::async_trait;
