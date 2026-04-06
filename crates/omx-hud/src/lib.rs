@@ -22,6 +22,12 @@ pub struct HudState {
     pub pending_tasks: u32,
     pub completed_tasks: u32,
     pub uptime_seconds: u64,
+    pub active_mode: Option<String>,
+    pub git_branch: Option<String>,
+    pub git_dirty: bool,
+    pub turn_count: u64,
+    pub tokens_used: u64,
+    pub preset: crate::presets::HudPreset,
 }
 
 struct TerminalGuard;
@@ -135,6 +141,12 @@ mod tests {
             pending_tasks: 5,
             completed_tasks: 2,
             uptime_seconds: 120,
+            active_mode: None,
+            git_branch: None,
+            git_dirty: false,
+            turn_count: 0,
+            tokens_used: 0,
+            preset: crate::presets::HudPreset::Standard,
         };
         let json = serde_json::to_string(&state).unwrap();
         let parsed: HudState = serde_json::from_str(&json).unwrap();
@@ -166,6 +178,12 @@ mod tests {
             pending_tasks: 5,
             completed_tasks: 2,
             uptime_seconds: 120,
+            active_mode: None,
+            git_branch: None,
+            git_dirty: false,
+            turn_count: 0,
+            tokens_used: 0,
+            preset: crate::presets::HudPreset::Standard,
         };
 
         let backend = TestBackend::new(80, 24);
@@ -190,5 +208,27 @@ mod tests {
         assert!(text.contains("codex"), "should show provider");
         assert!(text.contains("Exec"), "should show team phase");
         assert!(text.contains("3"), "should show worker count");
+    }
+
+    #[test]
+    fn hud_state_with_mode_and_git() {
+        let state = HudState {
+            session_id: Some("sess-1".into()),
+            provider: Some("codex".into()),
+            model: Some("o3".into()),
+            team_phase: Some(TeamPhase::Exec),
+            worker_count: 3,
+            pending_tasks: 5,
+            completed_tasks: 2,
+            uptime_seconds: 120,
+            active_mode: Some("autopilot".into()),
+            git_branch: Some("main".into()),
+            git_dirty: false,
+            turn_count: 42,
+            tokens_used: 15000,
+            preset: crate::presets::HudPreset::Standard,
+        };
+        assert_eq!(state.active_mode.as_deref(), Some("autopilot"));
+        assert_eq!(state.turn_count, 42);
     }
 }
