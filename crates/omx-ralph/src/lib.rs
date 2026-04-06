@@ -1,5 +1,6 @@
 //! Phase validation, progress ledger, and visual feedback scoring.
 
+use omx_types::OmxError;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
@@ -132,6 +133,109 @@ impl Default for RalphProgressLedger {
 pub struct RalphCanonicalArtifacts {
     pub canonical_prd_path: Option<PathBuf>,
     pub canonical_progress_path: PathBuf,
+}
+
+// ---------------------------------------------------------------------------
+// Core functions
+// ---------------------------------------------------------------------------
+
+/// Normalize a raw phase string into a [`RalphPhase`].
+///
+/// Trims whitespace, lowercases, then matches against canonical names.
+pub fn normalize_ralph_phase(raw: &str) -> Result<RalphPhase, OmxError> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return Err(OmxError::Ralph("phase string is empty".into()));
+    }
+    match trimmed.to_lowercase().as_str() {
+        "starting" => Ok(RalphPhase::Starting),
+        "executing" => Ok(RalphPhase::Executing),
+        "verifying" => Ok(RalphPhase::Verifying),
+        "fixing" => Ok(RalphPhase::Fixing),
+        "complete" => Ok(RalphPhase::Complete),
+        "failed" => Ok(RalphPhase::Failed),
+        "cancelled" => Ok(RalphPhase::Cancelled),
+        other => Err(OmxError::Ralph(format!("unknown phase: {other}"))),
+    }
+}
+
+/// Validate a candidate ralph state JSON value.
+///
+/// Checks phase validity, terminal-phase constraints, and iteration bounds.
+pub fn validate_ralph_state(candidate: &serde_json::Value) -> RalphStateValidationResult {
+    let active = candidate
+        .get("active")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+
+    // Parse phase
+    let phase = match candidate.get("current_phase").and_then(|v| v.as_str()) {
+        Some(raw) => match normalize_ralph_phase(raw) {
+            Ok(p) => Some(p),
+            Err(e) => {
+                return RalphStateValidationResult {
+                    ok: false,
+                    phase: None,
+                    warning: None,
+                    error: Some(e.to_string()),
+                };
+            }
+        },
+        None => {
+            if active {
+                Some(RalphPhase::Starting)
+            } else {
+                None
+            }
+        }
+    };
+
+    // Terminal phases require active=false
+    if let Some(ref p) = phase {
+        if p.is_terminal() && active {
+            return RalphStateValidationResult {
+                ok: false,
+                phase: Some(*p),
+                warning: None,
+                error: Some(format!("terminal phase '{}' requires active=false", p)),
+            };
+        }
+    }
+
+    // Validate iteration >= 0 (if present)
+    if let Some(iter_val) = candidate.get("iteration") {
+        if let Some(n) = iter_val.as_i64() {
+            if n < 0 {
+                return RalphStateValidationResult {
+                    ok: false,
+                    phase,
+                    warning: None,
+                    error: Some("iteration must be >= 0".into()),
+                };
+            }
+        }
+    }
+
+    // Validate max_iterations > 0 (if present)
+    if let Some(max_val) = candidate.get("max_iterations") {
+        if let Some(n) = max_val.as_i64() {
+            if n <= 0 {
+                return RalphStateValidationResult {
+                    ok: false,
+                    phase,
+                    warning: None,
+                    error: Some("max_iterations must be > 0".into()),
+                };
+            }
+        }
+    }
+
+    RalphStateValidationResult {
+        ok: true,
+        phase,
+        warning: None,
+        error: None,
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -275,5 +379,143 @@ mod tests {
         assert_eq!(back.source.as_deref(), Some("test"));
         assert_eq!(back.entries.len(), 1);
         assert_eq!(back.visual_feedback.len(), 1);
+    }
+
+    // -- normalize_ralph_phase --
+
+    #[test]
+    fn normalize_valid_phases() {
+        assert_eq!(
+            normalize_ralph_phase("starting").unwrap(),
+            RalphPhase::Starting
+        );
+        assert_eq!(
+            normalize_ralph_phase("executing").unwrap(),
+            RalphPhase::Executing
+        );
+        assert_eq!(
+            normalize_ralph_phase("verifying").unwrap(),
+            RalphPhase::Verifying
+        );
+        assert_eq!(normalize_ralph_phase("fixing").unwrap(), RalphPhase::Fixing);
+        assert_eq!(
+            normalize_ralph_phase("complete").unwrap(),
+            RalphPhase::Complete
+        );
+        assert_eq!(normalize_ralph_phase("failed").unwrap(), RalphPhase::Failed);
+        assert_eq!(
+            normalize_ralph_phase("cancelled").unwrap(),
+            RalphPhase::Cancelled
+        );
+    }
+
+    #[test]
+    fn normalize_case_insensitive() {
+        assert_eq!(
+            normalize_ralph_phase("STARTING").unwrap(),
+            RalphPhase::Starting
+        );
+        assert_eq!(
+            normalize_ralph_phase("Executing").unwrap(),
+            RalphPhase::Executing
+        );
+        assert_eq!(
+            normalize_ralph_phase("COMPLETE").unwrap(),
+            RalphPhase::Complete
+        );
+    }
+
+    #[test]
+    fn normalize_trims_whitespace() {
+        assert_eq!(
+            normalize_ralph_phase("  starting  ").unwrap(),
+            RalphPhase::Starting
+        );
+        assert_eq!(
+            normalize_ralph_phase("\texecuting\n").unwrap(),
+            RalphPhase::Executing
+        );
+    }
+
+    #[test]
+    fn normalize_rejects_empty() {
+        assert!(normalize_ralph_phase("").is_err());
+        assert!(normalize_ralph_phase("   ").is_err());
+    }
+
+    #[test]
+    fn normalize_rejects_unknown() {
+        let err = normalize_ralph_phase("bogus").unwrap_err();
+        assert!(err.to_string().contains("unknown phase"));
+    }
+
+    // -- validate_ralph_state --
+
+    #[test]
+    fn validate_valid_active_state() {
+        let state = serde_json::json!({
+            "active": true,
+            "current_phase": "executing",
+            "iteration": 1,
+            "max_iterations": 5,
+        });
+        let result = validate_ralph_state(&state);
+        assert!(result.ok);
+        assert_eq!(result.phase, Some(RalphPhase::Executing));
+        assert!(result.error.is_none());
+    }
+
+    #[test]
+    fn validate_auto_fills_defaults_when_active() {
+        let state = serde_json::json!({ "active": true });
+        let result = validate_ralph_state(&state);
+        assert!(result.ok);
+        assert_eq!(result.phase, Some(RalphPhase::Starting));
+    }
+
+    #[test]
+    fn validate_terminal_requires_inactive() {
+        let state = serde_json::json!({
+            "active": true,
+            "current_phase": "complete",
+        });
+        let result = validate_ralph_state(&state);
+        assert!(!result.ok);
+        assert!(result.error.as_deref().unwrap().contains("terminal phase"));
+    }
+
+    #[test]
+    fn validate_rejects_negative_iteration() {
+        let state = serde_json::json!({
+            "active": true,
+            "current_phase": "executing",
+            "iteration": -1,
+        });
+        let result = validate_ralph_state(&state);
+        assert!(!result.ok);
+        assert!(result.error.as_deref().unwrap().contains("iteration"));
+    }
+
+    #[test]
+    fn validate_rejects_zero_max_iterations() {
+        let state = serde_json::json!({
+            "active": true,
+            "current_phase": "executing",
+            "max_iterations": 0,
+        });
+        let result = validate_ralph_state(&state);
+        assert!(!result.ok);
+        assert!(result.error.as_deref().unwrap().contains("max_iterations"));
+    }
+
+    #[test]
+    fn validate_rejects_invalid_phase() {
+        let state = serde_json::json!({
+            "active": true,
+            "current_phase": "bogus",
+        });
+        let result = validate_ralph_state(&state);
+        assert!(!result.ok);
+        assert!(result.error.as_deref().unwrap().contains("unknown phase"));
     }
 }
