@@ -291,6 +291,9 @@ pub enum OmxError {
 
     #[error("pipeline error: {0}")]
     Pipeline(String),
+
+    #[error("notification error: {0}")]
+    Notification(String),
 }
 
 // ---------------------------------------------------------------------------
@@ -456,5 +459,11 @@ mod tests {
     fn pipeline_error_display() {
         let err = OmxError::Pipeline("stage failed".into());
         assert_eq!(err.to_string(), "pipeline error: stage failed");
+    }
+
+    #[test]
+    fn notification_error_display() {
+        let err = OmxError::Notification("pushover timeout".into());
+        assert_eq!(err.to_string(), "notification error: pushover timeout");
     }
 }
