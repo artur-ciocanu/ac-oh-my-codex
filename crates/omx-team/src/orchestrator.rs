@@ -45,6 +45,42 @@ impl OrchestratorState {
     }
 }
 
+/// Return IDs of workers that are not alive.
+pub fn collect_dead_workers(state: &OrchestratorState) -> Vec<WorkerId> {
+    state
+        .workers
+        .iter()
+        .filter(|(_, _, alive, _)| !*alive)
+        .map(|(id, _, _, _)| id.clone())
+        .collect()
+}
+
+/// Reassign tasks from dead workers back to Pending. Returns the IDs of reassigned tasks.
+pub fn reassign_from_dead_workers(state: &mut OrchestratorState) -> Vec<TaskId> {
+    let dead_workers = collect_dead_workers(state);
+    let mut reassigned = Vec::new();
+
+    for dead_id in &dead_workers {
+        if let Some(worker) = state.workers.iter_mut().find(|(id, _, _, _)| id == dead_id) {
+            if let Some(task_id) = worker.3.take() {
+                if let Some(task) = state.tasks.iter_mut().find(|(id, _, _)| *id == task_id) {
+                    if task.1 == TaskStatus::InProgress {
+                        task.1 = TaskStatus::Pending;
+                        reassigned.push(task_id);
+                        tracing::info!(
+                            worker = %dead_id.0,
+                            task = %reassigned.last().unwrap().0,
+                            "reassigned task from dead worker"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    reassigned
+}
+
 /// Perform one monitor tick: snapshot state, infer phase.
 pub fn tick(state: &OrchestratorState) -> TeamSnapshot {
     let phase_controller = DefaultPhaseController;
@@ -182,5 +218,32 @@ mod tests {
         let mut state = OrchestratorState::new(config);
         state.tasks[0].1 = TaskStatus::Completed;
         assert!(!is_done(&state));
+    }
+
+    #[test]
+    fn mark_stale_workers_dead() {
+        let config = make_config(2);
+        let mut state = OrchestratorState::new(config);
+        state.workers[0].2 = false; // alive = false
+
+        let dead = collect_dead_workers(&state);
+        assert_eq!(dead.len(), 1);
+        assert_eq!(dead[0], WorkerId("worker-0".into()));
+    }
+
+    #[test]
+    fn reassign_dead_worker_tasks() {
+        let config = make_config(2);
+        let mut state = OrchestratorState::new(config);
+
+        state.tasks[0].1 = TaskStatus::InProgress;
+        state.workers[0].3 = Some(TaskId("task-0".into()));
+        state.workers[0].2 = false; // dead
+
+        let reassigned = reassign_from_dead_workers(&mut state);
+        assert_eq!(reassigned.len(), 1);
+        assert_eq!(reassigned[0], TaskId("task-0".into()));
+        assert_eq!(state.tasks[0].1, TaskStatus::Pending);
+        assert!(state.workers[0].3.is_none());
     }
 }
