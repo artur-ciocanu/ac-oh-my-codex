@@ -33,22 +33,42 @@ pub struct NotificationConfig {
     pub discord: Option<DiscordConfig>,
     pub slack: Option<SlackConfig>,
     pub telegram: Option<TelegramConfig>,
+    pub pushover: Option<PushoverConfig>,
+    pub generic: Option<GenericWebhookConfig>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DiscordConfig {
     pub webhook_url: String,
+    pub mention: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SlackConfig {
     pub webhook_url: String,
+    pub mention: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TelegramConfig {
     pub bot_token: String,
     pub chat_id: String,
+    pub mention: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PushoverConfig {
+    pub user_key: String,
+    pub app_token: String,
+    pub device: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GenericWebhookConfig {
+    pub url: String,
+    pub auth_token: Option<String>,
+    #[serde(default)]
+    pub headers: HashMap<String, String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -608,5 +628,77 @@ MAX_TURNS = "100"
 
         let config = DefaultConfigLoader::load(tmp.path(), &env).unwrap();
         assert_eq!(config.codex_home, PathBuf::from("/custom/home"));
+    }
+
+    #[test]
+    fn load_reads_pushover_config_from_toml() {
+        let tmp = tempfile::tempdir().unwrap();
+        let toml_content = r#"
+[notifications.pushover]
+user_key = "uQiRzpo4DXghDmr9QzzfQu27cmVRsG"
+app_token = "azGDORePK8gMaC0QOYAMyEEuzJnyUi"
+device = "iphone"
+"#;
+        fs::write(tmp.path().join("config.toml"), toml_content).unwrap();
+        let config = DefaultConfigLoader::load(tmp.path(), &HashMap::new()).unwrap();
+        let pushover = config.notifications.pushover.as_ref().unwrap();
+        assert_eq!(pushover.user_key, "uQiRzpo4DXghDmr9QzzfQu27cmVRsG");
+        assert_eq!(pushover.app_token, "azGDORePK8gMaC0QOYAMyEEuzJnyUi");
+        assert_eq!(pushover.device.as_deref(), Some("iphone"));
+    }
+
+    #[test]
+    fn load_reads_generic_webhook_config_from_toml() {
+        let tmp = tempfile::tempdir().unwrap();
+        let toml_content = r#"
+[notifications.generic]
+url = "https://example.com/webhook"
+auth_token = "Bearer secret123"
+
+[notifications.generic.headers]
+X-Custom = "value"
+"#;
+        fs::write(tmp.path().join("config.toml"), toml_content).unwrap();
+        let config = DefaultConfigLoader::load(tmp.path(), &HashMap::new()).unwrap();
+        let generic = config.notifications.generic.as_ref().unwrap();
+        assert_eq!(generic.url, "https://example.com/webhook");
+        assert_eq!(generic.auth_token.as_deref(), Some("Bearer secret123"));
+        assert_eq!(generic.headers.get("X-Custom").unwrap(), "value");
+    }
+
+    #[test]
+    fn notification_mentions_config() {
+        let tmp = tempfile::tempdir().unwrap();
+        let toml_content = r#"
+[notifications.discord]
+webhook_url = "https://discord.com/api/webhooks/123/abc"
+mention = "<@&12345>"
+
+[notifications.slack]
+webhook_url = "https://hooks.slack.com/services/T/B/X"
+mention = "<@U12345>"
+"#;
+        fs::write(tmp.path().join("config.toml"), toml_content).unwrap();
+        let config = DefaultConfigLoader::load(tmp.path(), &HashMap::new()).unwrap();
+        assert_eq!(
+            config
+                .notifications
+                .discord
+                .as_ref()
+                .unwrap()
+                .mention
+                .as_deref(),
+            Some("<@&12345>")
+        );
+        assert_eq!(
+            config
+                .notifications
+                .slack
+                .as_ref()
+                .unwrap()
+                .mention
+                .as_deref(),
+            Some("<@U12345>")
+        );
     }
 }
