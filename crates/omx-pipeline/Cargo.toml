@@ -1,0 +1,19 @@
+[package]
+name = "omx-pipeline"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+omx-types = { path = "../omx-types" }
+omx-modes = { path = "../omx-modes" }
+omx-ralplan = { path = "../omx-ralplan" }
+omx-ralph = { path = "../omx-ralph" }
+async-trait = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+chrono = { workspace = true }
+tokio = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
