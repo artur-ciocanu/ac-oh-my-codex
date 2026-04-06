@@ -50,6 +50,7 @@ pub fn inject_agents_overlay(
 }
 
 /// Phase 3 helper: determine the lock file path for the current session.
+#[allow(dead_code)]
 pub fn session_lock_path(codex_home: &Path) -> PathBuf {
     codex_home.join(".omx").join("session.lock")
 }

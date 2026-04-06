@@ -8,6 +8,7 @@ pub struct CleanupReport {
 }
 
 impl CleanupReport {
+    #[allow(dead_code)]
     pub fn total(&self) -> u32 {
         self.stale_locks_removed + self.stale_sessions_removed + self.stale_worktrees_removed
     }
