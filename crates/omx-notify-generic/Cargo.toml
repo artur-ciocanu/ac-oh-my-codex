@@ -1,13 +1,13 @@
 [package]
-name = "omx-notify-slack"
+name = "omx-notify-generic"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "Slack notification hook for OMX"
+description = "Generic webhook notification hook for OMX"
 
 [[bin]]
-name = "omx-notify-slack"
+name = "omx-notify-generic"
 path = "src/main.rs"
 
 [dependencies]

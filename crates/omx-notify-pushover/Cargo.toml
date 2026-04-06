@@ -1,13 +1,13 @@
 [package]
-name = "omx-notify-slack"
+name = "omx-notify-pushover"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "Slack notification hook for OMX"
+description = "Pushover notification hook for OMX"
 
 [[bin]]
-name = "omx-notify-slack"
+name = "omx-notify-pushover"
 path = "src/main.rs"
 
 [dependencies]
