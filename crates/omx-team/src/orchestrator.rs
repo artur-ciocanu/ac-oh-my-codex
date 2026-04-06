@@ -139,6 +139,11 @@ mod tests {
             governance: TeamGovernance::default(),
             worktree_mode: WorktreeMode::Shared,
             dispatch_mode: DispatchMode::Tmux,
+            heartbeat_interval_secs: 30,
+            heartbeat_stale_secs: 90,
+            merge_strategy: crate::merge_strategy::MergeStrategy::default(),
+            auto_commit: crate::auto_commit::AutoCommitConfig::default(),
+            approval_required: false,
         }
     }
 
