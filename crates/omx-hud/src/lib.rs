@@ -1,3 +1,7 @@
+pub mod git_context;
+pub mod mode_indicator;
+pub mod presets;
+
 use crossterm::{
     event::{self, Event, KeyCode, KeyEventKind},
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
