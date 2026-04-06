@@ -15,6 +15,7 @@ pub struct OmxConfig {
     pub notifications: NotificationConfig,
     pub team: TeamDefaults,
     pub features: FeatureFlags,
+    pub agents: AgentsConfig,
     pub env: HashMap<String, String>,
 }
 
@@ -66,6 +67,19 @@ pub struct FeatureFlags {
     pub experimental_autoresearch: bool,
 }
 
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct AgentsConfig {
+    #[serde(default)]
+    pub overrides: HashMap<String, AgentOverride>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct AgentOverride {
+    pub model: Option<String>,
+    pub description: Option<String>,
+    pub tools: Option<Vec<String>>,
+}
+
 // ---------------------------------------------------------------------------
 // Default impls
 // ---------------------------------------------------------------------------
@@ -78,6 +92,7 @@ impl Default for OmxConfig {
             notifications: NotificationConfig::default(),
             team: TeamDefaults::default(),
             features: FeatureFlags::default(),
+            agents: AgentsConfig::default(),
             env: HashMap::new(),
         }
     }
@@ -122,6 +137,8 @@ struct TomlConfigFile {
     pub team: Option<TomlTeamSection>,
     #[serde(default)]
     pub features: Option<FeatureFlags>,
+    #[serde(default)]
+    pub agents: Option<AgentsConfig>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -156,6 +173,8 @@ struct JsonConfigFile {
     pub team: Option<TomlTeamSection>,
     #[serde(default)]
     pub features: Option<FeatureFlags>,
+    #[serde(default)]
+    pub agents: Option<AgentsConfig>,
 }
 
 // ---------------------------------------------------------------------------
@@ -249,6 +268,9 @@ fn apply_toml(config: &mut OmxConfig, toml: &TomlConfigFile) {
     if let Some(ref features) = toml.features {
         config.features = features.clone();
     }
+    if let Some(ref agents) = toml.agents {
+        config.agents = agents.clone();
+    }
 }
 
 fn apply_json(config: &mut OmxConfig, json: &JsonConfigFile) {
@@ -285,6 +307,9 @@ fn apply_json(config: &mut OmxConfig, json: &JsonConfigFile) {
     }
     if let Some(ref features) = json.features {
         config.features = features.clone();
+    }
+    if let Some(ref agents) = json.agents {
+        config.agents = agents.clone();
     }
 }
 
@@ -509,6 +534,34 @@ experimental_pipeline = false
         assert!(config.features.experimental_hud);
         assert!(!config.features.experimental_pipeline);
         assert!(!config.features.experimental_autoresearch);
+    }
+
+    #[test]
+    fn agents_config_default_is_empty() {
+        let config = OmxConfig::default();
+        assert!(config.agents.overrides.is_empty());
+    }
+
+    #[test]
+    fn load_reads_agents_section_from_toml() {
+        let tmp = tempfile::tempdir().unwrap();
+        let toml_content = r#"
+[agents.overrides.architect]
+model = "o3"
+description = "System design agent"
+
+[agents.overrides.reviewer]
+model = "o4-mini"
+"#;
+        fs::write(tmp.path().join("config.toml"), toml_content).unwrap();
+        let config = DefaultConfigLoader::load(tmp.path(), &HashMap::new()).unwrap();
+        assert_eq!(config.agents.overrides.len(), 2);
+        let architect = &config.agents.overrides["architect"];
+        assert_eq!(architect.model.as_deref(), Some("o3"));
+        assert_eq!(
+            architect.description.as_deref(),
+            Some("System design agent")
+        );
     }
 
     #[test]
