@@ -591,6 +591,79 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
         }
+        Some(Commands::Exec { agent, prompt }) => {
+            println!("exec: agent={agent}, prompt={prompt}");
+            println!("(not yet wired)");
+        }
+        Some(Commands::Agents) => {
+            println!("Available agents:");
+            println!("  (agent listing not yet wired)");
+        }
+        Some(Commands::AgentsInit) => {
+            println!("Scaffolding agent config files...");
+            println!("  (not yet wired)");
+        }
+        Some(Commands::Uninstall) => {
+            println!("Uninstalling OMX...");
+            println!("  (not yet wired — would remove ~/.codex/.omx)");
+        }
+        Some(Commands::Cleanup) => {
+            println!("Cleaning up stale sessions, worktrees, lock files...");
+            println!("  (not yet wired)");
+        }
+        Some(Commands::Session { action }) => {
+            match action {
+                Some(SessionAction::List) | None => {
+                    println!("Recent sessions:");
+                    println!("  (session listing not yet wired)");
+                }
+                Some(SessionAction::Show { session_id }) => {
+                    println!("Session: {session_id}");
+                    println!("  (session detail not yet wired)");
+                }
+            }
+        }
+        Some(Commands::Resume { session_id }) => {
+            println!("Resuming session {session_id}...");
+            println!("  (not yet wired)");
+        }
+        Some(Commands::Ralph { prompt }) => {
+            let desc = prompt.as_deref().unwrap_or("(interactive)");
+            println!("Starting Ralph workflow: {desc}");
+            println!("  (not yet wired)");
+        }
+        Some(Commands::Autoresearch { prompt }) => {
+            println!("Starting autoresearch: {prompt}");
+            println!("  (not yet wired)");
+        }
+        Some(Commands::Ralplan { prompt }) => {
+            println!("Starting consensus planning: {prompt}");
+            println!("  (not yet wired)");
+        }
+        Some(Commands::Pipeline { name }) => {
+            println!("Running pipeline: {name}");
+            println!("  (not yet wired)");
+        }
+        Some(Commands::TmuxHook { event, target }) => {
+            let tgt = target.as_deref().unwrap_or("(none)");
+            println!("tmux-hook: event={event}, target={tgt}");
+        }
+        Some(Commands::Status) => {
+            let home = omx_config::default_codex_home();
+            let env: std::collections::HashMap<String, String> = std::env::vars().collect();
+            let config = omx_config::DefaultConfigLoader::load(&home, &env)
+                .unwrap_or_else(|_| omx_config::OmxConfig::default());
+            println!("OMX Status");
+            println!("  Model: {}", config.models.frontier);
+            println!("  Mode: (idle)");
+            println!("  Session: (none active)");
+        }
+        Some(Commands::Reasoning { effort }) => {
+            match effort {
+                Some(e) => println!("Reasoning effort set to: {e}"),
+                None => println!("Current reasoning effort: (default)"),
+            }
+        }
     }
 
     Ok(())
