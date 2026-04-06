@@ -7,6 +7,7 @@ repository.workspace = true
 description = "Hook discovery, dispatch, and JSON contract for OMX"
 
 [dependencies]
+omx-config = { path = "../omx-config" }
 omx-types = { path = "../omx-types" }
 serde = { workspace = true }
 serde_json = { workspace = true }

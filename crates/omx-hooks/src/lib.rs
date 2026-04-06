@@ -1,6 +1,7 @@
 pub mod aggregator;
 pub mod builtins;
 pub mod chain;
+pub mod router;
 
 use std::path::{Path, PathBuf};
 
