@@ -1,6 +1,7 @@
 mod cleanup;
 mod doctor;
 mod launch;
+mod migrate;
 
 use clap::{Parser, Subcommand};
 use omx_config::ConfigLoader;
@@ -129,6 +130,11 @@ enum Commands {
         #[arg(long)]
         effort: Option<String>,
     },
+    /// Migrate TS-era config and session data to Rust format
+    Migrate {
+        #[command(subcommand)]
+        action: MigrateAction,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -213,6 +219,37 @@ enum HookApiAction {
     },
     /// Read session info
     SessionRead,
+}
+
+#[derive(Debug, Subcommand)]
+enum MigrateAction {
+    /// Convert .omx-config.json to config.toml
+    Config {
+        /// Show what would change without writing
+        #[arg(long)]
+        dry_run: bool,
+        /// Overwrite existing config.toml values
+        #[arg(long)]
+        force: bool,
+    },
+    /// Convert rollout-*.jsonl to per-session directories
+    Sessions {
+        /// Show what would change without writing
+        #[arg(long)]
+        dry_run: bool,
+        /// Overwrite existing sessions
+        #[arg(long)]
+        force: bool,
+    },
+    /// Run both config and sessions migration
+    All {
+        /// Show what would change without writing
+        #[arg(long)]
+        dry_run: bool,
+        /// Overwrite existing data
+        #[arg(long)]
+        force: bool,
+    },
 }
 
 #[tokio::main]
@@ -652,6 +689,46 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             Some(e) => println!("Reasoning effort set to: {e}"),
             None => println!("Current reasoning effort: (default)"),
         },
+        Some(Commands::Migrate { action }) => {
+            let home = omx_config::default_codex_home();
+            match action {
+                MigrateAction::Config { dry_run, force } => {
+                    match migrate::migrate_config(&home, dry_run, force) {
+                        Ok(result) => migrate::print_config_result(&result, dry_run),
+                        Err(e) => {
+                            eprintln!("Config migration failed: {e}");
+                            std::process::exit(1);
+                        }
+                    }
+                }
+                MigrateAction::Sessions { dry_run, force } => {
+                    match migrate::migrate_sessions(&home, dry_run, force) {
+                        Ok(result) => migrate::print_sessions_result(&result, dry_run),
+                        Err(e) => {
+                            eprintln!("Session migration failed: {e}");
+                            std::process::exit(1);
+                        }
+                    }
+                }
+                MigrateAction::All { dry_run, force } => {
+                    match migrate::migrate_config(&home, dry_run, force) {
+                        Ok(result) => migrate::print_config_result(&result, dry_run),
+                        Err(e) => {
+                            eprintln!("Config migration failed: {e}");
+                            std::process::exit(1);
+                        }
+                    }
+                    println!();
+                    match migrate::migrate_sessions(&home, dry_run, force) {
+                        Ok(result) => migrate::print_sessions_result(&result, dry_run),
+                        Err(e) => {
+                            eprintln!("Session migration failed: {e}");
+                            std::process::exit(1);
+                        }
+                    }
+                }
+            }
+        }
     }
 
     Ok(())
