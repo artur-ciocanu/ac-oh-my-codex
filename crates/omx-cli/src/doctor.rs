@@ -29,54 +29,30 @@ fn which_ok(bin: &str) -> bool {
         .unwrap_or(false)
 }
 
+fn check_binary_runs(name: &str, arg: &str) -> CheckResult {
+    let ok = std::process::Command::new(name)
+        .arg(arg)
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false);
+    CheckResult {
+        name: name.into(),
+        status: if ok {
+            CheckStatus::Ok
+        } else {
+            CheckStatus::Missing
+        },
+    }
+}
+
 pub fn check_dependencies() -> CheckGroup {
-    let mut checks = Vec::new();
-
-    let tmux_ok = std::process::Command::new("tmux")
-        .arg("-V")
-        .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false);
-    checks.push(CheckResult {
-        name: "tmux".into(),
-        status: if tmux_ok {
-            CheckStatus::Ok
-        } else {
-            CheckStatus::Missing
-        },
-    });
-
-    let codex_ok = std::process::Command::new("codex")
-        .arg("--version")
-        .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false);
-    checks.push(CheckResult {
-        name: "codex".into(),
-        status: if codex_ok {
-            CheckStatus::Ok
-        } else {
-            CheckStatus::Missing
-        },
-    });
-
-    let claude_ok = std::process::Command::new("claude")
-        .arg("--version")
-        .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false);
-    checks.push(CheckResult {
-        name: "claude".into(),
-        status: if claude_ok {
-            CheckStatus::Ok
-        } else {
-            CheckStatus::Missing
-        },
-    });
-
     CheckGroup {
         name: "Dependencies",
-        checks,
+        checks: vec![
+            check_binary_runs("tmux", "-V"),
+            check_binary_runs("codex", "--version"),
+            check_binary_runs("claude", "--version"),
+        ],
     }
 }
 
