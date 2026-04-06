@@ -42,7 +42,10 @@ impl RalplanPhase {
 
     /// Returns `true` for active phases: Draft, ArchitectReview, CriticReview.
     pub fn is_active(&self) -> bool {
-        matches!(self, Self::Draft | Self::ArchitectReview | Self::CriticReview)
+        matches!(
+            self,
+            Self::Draft | Self::ArchitectReview | Self::CriticReview
+        )
     }
 }
 

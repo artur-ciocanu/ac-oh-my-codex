@@ -123,6 +123,8 @@ pub struct RalphVerifyDescriptor {
 // Pipeline orchestrator
 // ---------------------------------------------------------------------------
 
+pub type StageTransitionCallback = Box<dyn Fn(&str, &StageContext) + Send + Sync>;
+
 pub struct PipelineConfig {
     pub name: String,
     pub task: String,
@@ -132,7 +134,7 @@ pub struct PipelineConfig {
     pub max_ralph_iterations: Option<u32>,
     pub worker_count: Option<u32>,
     pub agent_type: Option<String>,
-    pub on_stage_transition: Option<Box<dyn Fn(&str, &StageContext) + Send + Sync>>,
+    pub on_stage_transition: Option<StageTransitionCallback>,
 }
 
 fn validate_config(config: &PipelineConfig) -> Result<(), omx_types::OmxError> {
