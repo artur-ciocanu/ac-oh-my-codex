@@ -226,6 +226,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let env: std::collections::HashMap<String, String> = std::env::vars().collect();
             let config = omx_config::DefaultConfigLoader::load(&home, &env)
                 .unwrap_or_else(|_| omx_config::OmxConfig::default());
+
+            // Phase 1: Validate config
+            let warnings = launch::validate_config(&config);
+            for w in &warnings {
+                eprintln!("warning: {w}");
+            }
+
+            // Phase 2: Inject AGENTS.md overlay
+            let agents_path = home.join("AGENTS.md");
+            let gen = omx_setup::DefaultSetupGenerator;
+            use omx_setup::SetupGenerator;
+            if let Ok(overlay) = gen.generate_agents_md(&config) {
+                if let Err(e) = launch::inject_agents_overlay(&agents_path, &overlay) {
+                    eprintln!("warning: failed to inject AGENTS.md: {e}");
+                }
+            }
+
+            // Phase 3: Start session — launch provider
             let provider = cli.provider.as_deref().unwrap_or("codex");
             let model = cli.model.as_deref().unwrap_or(&config.models.frontier);
             let bin = match provider {
@@ -608,21 +626,30 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             println!("  (not yet wired — would remove ~/.codex/.omx)");
         }
         Some(Commands::Cleanup) => {
-            println!("Cleaning up stale sessions, worktrees, lock files...");
-            println!("  (not yet wired)");
-        }
-        Some(Commands::Session { action }) => {
-            match action {
-                Some(SessionAction::List) | None => {
-                    println!("Recent sessions:");
-                    println!("  (session listing not yet wired)");
+            let home = omx_config::default_codex_home();
+            match cleanup::run_cleanup(&home) {
+                Ok(report) => {
+                    println!("Cleanup complete:");
+                    println!("  {} lock files removed", report.stale_locks_removed);
+                    println!("  {} stale sessions removed", report.stale_sessions_removed);
+                    println!(
+                        "  {} stale worktrees removed",
+                        report.stale_worktrees_removed
+                    );
                 }
-                Some(SessionAction::Show { session_id }) => {
-                    println!("Session: {session_id}");
-                    println!("  (session detail not yet wired)");
-                }
+                Err(e) => eprintln!("Cleanup failed: {e}"),
             }
         }
+        Some(Commands::Session { action }) => match action {
+            Some(SessionAction::List) | None => {
+                println!("Recent sessions:");
+                println!("  (session listing not yet wired)");
+            }
+            Some(SessionAction::Show { session_id }) => {
+                println!("Session: {session_id}");
+                println!("  (session detail not yet wired)");
+            }
+        },
         Some(Commands::Resume { session_id }) => {
             println!("Resuming session {session_id}...");
             println!("  (not yet wired)");
@@ -658,12 +685,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             println!("  Mode: (idle)");
             println!("  Session: (none active)");
         }
-        Some(Commands::Reasoning { effort }) => {
-            match effort {
-                Some(e) => println!("Reasoning effort set to: {e}"),
-                None => println!("Current reasoning effort: (default)"),
-            }
-        }
+        Some(Commands::Reasoning { effort }) => match effort {
+            Some(e) => println!("Reasoning effort set to: {e}"),
+            None => println!("Current reasoning effort: (default)"),
+        },
     }
 
     Ok(())
