@@ -14,6 +14,7 @@ pub struct OmxConfig {
     pub models: ModelConfig,
     pub notifications: NotificationConfig,
     pub team: TeamDefaults,
+    pub features: FeatureFlags,
     pub env: HashMap<String, String>,
 }
 
@@ -55,6 +56,16 @@ pub struct TeamDefaults {
     pub worktree_mode: String,
 }
 
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct FeatureFlags {
+    #[serde(default)]
+    pub experimental_hud: bool,
+    #[serde(default)]
+    pub experimental_pipeline: bool,
+    #[serde(default)]
+    pub experimental_autoresearch: bool,
+}
+
 // ---------------------------------------------------------------------------
 // Default impls
 // ---------------------------------------------------------------------------
@@ -66,6 +77,7 @@ impl Default for OmxConfig {
             models: ModelConfig::default(),
             notifications: NotificationConfig::default(),
             team: TeamDefaults::default(),
+            features: FeatureFlags::default(),
             env: HashMap::new(),
         }
     }
@@ -108,6 +120,8 @@ struct TomlConfigFile {
     pub notifications: Option<NotificationConfig>,
     #[serde(default)]
     pub team: Option<TomlTeamSection>,
+    #[serde(default)]
+    pub features: Option<FeatureFlags>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -140,6 +154,8 @@ struct JsonConfigFile {
     pub notifications: Option<NotificationConfig>,
     #[serde(default)]
     pub team: Option<TomlTeamSection>,
+    #[serde(default)]
+    pub features: Option<FeatureFlags>,
 }
 
 // ---------------------------------------------------------------------------
@@ -230,6 +246,9 @@ fn apply_toml(config: &mut OmxConfig, toml: &TomlConfigFile) {
             config.team.worktree_mode = v.clone();
         }
     }
+    if let Some(ref features) = toml.features {
+        config.features = features.clone();
+    }
 }
 
 fn apply_json(config: &mut OmxConfig, json: &JsonConfigFile) {
@@ -263,6 +282,9 @@ fn apply_json(config: &mut OmxConfig, json: &JsonConfigFile) {
         if let Some(ref v) = team.worktree_mode {
             config.team.worktree_mode = v.clone();
         }
+    }
+    if let Some(ref features) = json.features {
+        config.features = features.clone();
     }
 }
 
@@ -464,6 +486,29 @@ webhook_url = "https://hooks.slack.com/services/T/B/X"
             "https://hooks.slack.com/services/T/B/X"
         );
         assert!(config.notifications.telegram.is_none());
+    }
+
+    #[test]
+    fn feature_flags_default_all_false() {
+        let flags = FeatureFlags::default();
+        assert!(!flags.experimental_hud);
+        assert!(!flags.experimental_pipeline);
+        assert!(!flags.experimental_autoresearch);
+    }
+
+    #[test]
+    fn load_reads_feature_flags_from_toml() {
+        let tmp = tempfile::tempdir().unwrap();
+        let toml_content = r#"
+[features]
+experimental_hud = true
+experimental_pipeline = false
+"#;
+        fs::write(tmp.path().join("config.toml"), toml_content).unwrap();
+        let config = DefaultConfigLoader::load(tmp.path(), &HashMap::new()).unwrap();
+        assert!(config.features.experimental_hud);
+        assert!(!config.features.experimental_pipeline);
+        assert!(!config.features.experimental_autoresearch);
     }
 
     #[test]
