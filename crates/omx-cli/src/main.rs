@@ -1,4 +1,5 @@
 mod cleanup;
+mod doctor;
 mod launch;
 
 use clap::{Parser, Subcommand};
@@ -288,48 +289,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             println!("\nSetup complete.");
         }
         Some(Commands::Doctor) => {
-            println!("omx doctor — checking installation\n");
-            let tmux_ok = std::process::Command::new("tmux")
-                .arg("-V")
-                .output()
-                .map(|o| o.status.success())
-                .unwrap_or(false);
-            println!("  {} tmux", if tmux_ok { "ok" } else { "MISSING" });
-            let codex_ok = std::process::Command::new("codex")
-                .arg("--version")
-                .output()
-                .map(|o| o.status.success())
-                .unwrap_or(false);
-            println!("  {} codex", if codex_ok { "ok" } else { "MISSING" });
-            let claude_ok = std::process::Command::new("claude")
-                .arg("--version")
-                .output()
-                .map(|o| o.status.success())
-                .unwrap_or(false);
-            println!("  {} claude", if claude_ok { "ok" } else { "MISSING" });
-            let mcp_bins = [
-                "omx-mcp-state",
-                "omx-mcp-memory",
-                "omx-mcp-code-intel",
-                "omx-mcp-trace",
-                "omx-mcp-team",
-            ];
-            for bin in mcp_bins {
-                let ok = std::process::Command::new("which")
-                    .arg(bin)
-                    .output()
-                    .map(|o| o.status.success())
-                    .unwrap_or(false);
-                println!("  {} {bin}", if ok { "ok" } else { "MISSING" });
-            }
             let home = omx_config::default_codex_home();
-            let config_exists = home.join("config.toml").exists();
-            println!(
-                "  {} config.toml",
-                if config_exists { "ok" } else { "MISSING" }
-            );
-            if !tmux_ok {
-                println!("\n  tmux is required. Install with: brew install tmux");
+            let all_ok = doctor::run_doctor(&home);
+            if !all_ok {
+                std::process::exit(1);
             }
         }
         Some(Commands::Version) => {
