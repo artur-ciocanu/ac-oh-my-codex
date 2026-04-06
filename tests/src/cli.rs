@@ -417,4 +417,193 @@ mod tests {
             .expect("failed to run omx hud");
         let _ = output;
     }
+
+    // ----- Migrate tests -----
+
+    // NOTE: default_codex_home() returns $HOME/.codex, and omx_cmd sets HOME
+    // to config.home_path(), so the effective codex home is home_path()/.codex.
+    fn codex_home(config: &TestConfig) -> std::path::PathBuf {
+        config.home_path().join(".codex")
+    }
+
+    #[test]
+    fn cli_migrate_config_dry_run() {
+        let config = TestConfig::new();
+        let ch = codex_home(&config);
+        std::fs::create_dir_all(&ch).unwrap();
+        std::fs::write(
+            ch.join(".omx-config.json"),
+            r#"{"models": {"default": "gpt-5.4", "team": "gpt-5.4-mini"}, "env": {"MY_VAR": "hello"}}"#,
+        )
+        .unwrap();
+
+        let output = omx_cmd(&config)
+            .args(["migrate", "config", "--dry-run"])
+            .output()
+            .expect("failed to run omx migrate config --dry-run");
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        assert!(
+            stdout.contains("models.frontier") && stdout.contains("gpt-5.4"),
+            "dry-run should show field mapping, got: {stdout}"
+        );
+        assert!(
+            stdout.contains("dry-run"),
+            "should indicate dry-run mode, got: {stdout}"
+        );
+        // Verify config.toml was NOT created
+        assert!(
+            !ch.join("config.toml").exists(),
+            "dry-run should not write files"
+        );
+    }
+
+    #[test]
+    fn cli_migrate_config_writes() {
+        let config = TestConfig::new();
+        let ch = codex_home(&config);
+        std::fs::create_dir_all(&ch).unwrap();
+        std::fs::write(
+            ch.join(".omx-config.json"),
+            r#"{"models": {"default": "gpt-5.4"}}"#,
+        )
+        .unwrap();
+
+        let output = omx_cmd(&config)
+            .args(["migrate", "config"])
+            .output()
+            .expect("failed to run omx migrate config");
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        assert!(
+            stdout.contains("Migrated"),
+            "should report migration, got: {stdout}"
+        );
+
+        // Verify config.toml has the migrated value
+        let toml_str = std::fs::read_to_string(ch.join("config.toml")).unwrap();
+        assert!(
+            toml_str.contains("gpt-5.4"),
+            "config.toml should contain migrated model, got: {toml_str}"
+        );
+    }
+
+    #[test]
+    fn cli_migrate_sessions_dry_run() {
+        let config = TestConfig::new();
+        let ch = codex_home(&config);
+        let sessions_dir = ch.join("sessions");
+        std::fs::create_dir_all(&sessions_dir).unwrap();
+        std::fs::write(
+            sessions_dir.join("rollout-test.jsonl"),
+            r#"{"type":"session_meta","payload":{"id":"s1","timestamp":"2026-04-01T10:00:00Z","agent_role":"autopilot"}}
+{"type":"response_item","payload":{"type":"message","role":"user","content":"hello"}}
+"#,
+        )
+        .unwrap();
+
+        let output = omx_cmd(&config)
+            .args(["migrate", "sessions", "--dry-run"])
+            .output()
+            .expect("failed to run omx migrate sessions --dry-run");
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        assert!(
+            stdout.contains("1 rollout") || stdout.contains("Found"),
+            "should report rollout files found, got: {stdout}"
+        );
+        assert!(
+            stdout.contains("dry-run"),
+            "should indicate dry-run, got: {stdout}"
+        );
+    }
+
+    #[test]
+    fn cli_migrate_sessions_writes() {
+        let config = TestConfig::new();
+        let ch = codex_home(&config);
+        let sessions_dir = ch.join("sessions");
+        std::fs::create_dir_all(&sessions_dir).unwrap();
+        std::fs::create_dir_all(ch.join(".omx").join("sessions")).unwrap();
+        std::fs::write(
+            sessions_dir.join("rollout-test.jsonl"),
+            r#"{"type":"session_meta","payload":{"id":"s2","timestamp":"2026-04-01T10:00:00Z","agent_role":"team"}}
+{"type":"response_item","payload":{"type":"message","role":"user","content":"world"}}
+"#,
+        )
+        .unwrap();
+
+        let output = omx_cmd(&config)
+            .args(["migrate", "sessions"])
+            .output()
+            .expect("failed to run omx migrate sessions");
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        assert!(
+            stdout.contains("Migrated"),
+            "should report migration, got: {stdout}"
+        );
+
+        // Verify session directory was created
+        let meta_path = ch
+            .join(".omx")
+            .join("sessions")
+            .join("s2")
+            .join("meta.json");
+        assert!(meta_path.exists(), "session meta.json should exist");
+    }
+
+    // ----- Enhanced doctor tests -----
+
+    #[test]
+    fn cli_doctor_grouped_output() {
+        let config = TestConfig::new();
+        let ch = codex_home(&config);
+        std::fs::create_dir_all(&ch).unwrap();
+        std::fs::write(ch.join("config.toml"), "[models]\nfrontier = \"o3\"\n").unwrap();
+
+        let output = omx_cmd(&config)
+            .arg("doctor")
+            .output()
+            .expect("failed to run omx doctor");
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        assert!(
+            stdout.contains("Dependencies"),
+            "should have Dependencies section, got: {stdout}"
+        );
+        assert!(
+            stdout.contains("MCP Servers"),
+            "should have MCP Servers section, got: {stdout}"
+        );
+        assert!(
+            stdout.contains("Notification Hooks"),
+            "should have Notification Hooks section, got: {stdout}"
+        );
+        assert!(
+            stdout.contains("Configuration"),
+            "should have Configuration section, got: {stdout}"
+        );
+    }
+
+    #[test]
+    fn cli_doctor_detects_ts_era() {
+        let config = TestConfig::new();
+        let ch = codex_home(&config);
+        std::fs::create_dir_all(&ch).unwrap();
+        std::fs::write(
+            ch.join(".omx-config.json"),
+            r#"{"models": {"default": "gpt-5"}}"#,
+        )
+        .unwrap();
+
+        let output = omx_cmd(&config)
+            .arg("doctor")
+            .output()
+            .expect("failed to run omx doctor");
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        assert!(
+            stdout.contains("TS Migration"),
+            "should have TS Migration section, got: {stdout}"
+        );
+        assert!(
+            stdout.contains(".omx-config.json") && stdout.contains("migrate"),
+            "should suggest migration, got: {stdout}"
+        );
+    }
 }
