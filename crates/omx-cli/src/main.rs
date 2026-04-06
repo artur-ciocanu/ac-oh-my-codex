@@ -1,3 +1,6 @@
+mod cleanup;
+mod launch;
+
 use clap::{Parser, Subcommand};
 use omx_config::ConfigLoader;
 use omx_hooks::HookDispatcher;
@@ -81,6 +84,49 @@ enum Commands {
     HookApi {
         #[command(subcommand)]
         action: HookApiAction,
+    },
+
+    /// Run a single agent task (non-team)
+    Exec {
+        #[arg(long)]
+        agent: String,
+        prompt: String,
+    },
+    /// List available agent definitions
+    Agents,
+    /// Scaffold agent config files
+    AgentsInit,
+    /// Remove OMX configuration and artifacts
+    Uninstall,
+    /// Remove stale sessions, worktrees, lock files
+    Cleanup,
+    /// List/inspect session history
+    Session {
+        #[command(subcommand)]
+        action: Option<SessionAction>,
+    },
+    /// Restore a previous session
+    Resume { session_id: String },
+    /// Start/resume Ralph persistent workflow
+    Ralph { prompt: Option<String> },
+    /// Start autoresearch loop
+    Autoresearch { prompt: String },
+    /// Start consensus planning session
+    Ralplan { prompt: String },
+    /// Run a named pipeline
+    Pipeline { name: String },
+    /// Invoked by tmux hooks (resize, pane close)
+    TmuxHook {
+        event: String,
+        #[arg(long)]
+        target: Option<String>,
+    },
+    /// Show current mode, active team, session metrics
+    Status,
+    /// Display/configure model reasoning settings
+    Reasoning {
+        #[arg(long)]
+        effort: Option<String>,
     },
 }
 
