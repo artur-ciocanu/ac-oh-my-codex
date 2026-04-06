@@ -48,8 +48,8 @@ async fn send_discord_notification(event: &HookEvent) -> (bool, String, String) 
         }
     };
 
-    let template = std::env::var("OMX_DISCORD_TEMPLATE")
-        .unwrap_or_else(|_| DEFAULT_TEMPLATE.to_string());
+    let template =
+        std::env::var("OMX_DISCORD_TEMPLATE").unwrap_or_else(|_| DEFAULT_TEMPLATE.to_string());
 
     let ctx = TemplateContext::from_event(event);
     let description = render(&template, &ctx);

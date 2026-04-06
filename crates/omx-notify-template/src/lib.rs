@@ -77,11 +77,7 @@ impl TemplateContext {
 
         Self {
             mode: json_str(ctx, "mode"),
-            worker_id: event
-                .source
-                .worker_id
-                .clone()
-                .unwrap_or_default(),
+            worker_id: event.source.worker_id.clone().unwrap_or_default(),
             task_status: json_str(ctx, "task_status"),
             branch: json_str(ctx, "branch"),
             commit_sha: json_str(ctx, "commit_sha"),
@@ -160,10 +156,7 @@ pub fn render(template: &str, ctx: &TemplateContext) -> String {
         let content_end = start + end_pos;
         let content = &result[content_start..content_end];
 
-        let is_non_empty = map
-            .get(var_name)
-            .map(|v| !v.is_empty())
-            .unwrap_or(false);
+        let is_non_empty = map.get(var_name).map(|v| !v.is_empty()).unwrap_or(false);
 
         let replacement = if is_non_empty {
             content.to_string()

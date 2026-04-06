@@ -128,7 +128,11 @@ mod tests {
         );
         assert_eq!(
             decision.binary_names(),
-            vec!["omx-notify-discord", "omx-notify-slack", "omx-notify-pushover"]
+            vec![
+                "omx-notify-discord",
+                "omx-notify-slack",
+                "omx-notify-pushover"
+            ]
         );
     }
 

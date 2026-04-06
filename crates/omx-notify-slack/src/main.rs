@@ -95,8 +95,8 @@ async fn send_slack_notification(event: &HookEvent) -> (bool, String, String) {
     };
 
     let mention = std::env::var("OMX_SLACK_MENTION").unwrap_or_default();
-    let template = std::env::var("OMX_SLACK_TEMPLATE")
-        .unwrap_or_else(|_| DEFAULT_TEMPLATE.to_string());
+    let template =
+        std::env::var("OMX_SLACK_TEMPLATE").unwrap_or_else(|_| DEFAULT_TEMPLATE.to_string());
 
     let ctx = TemplateContext::from_event(event);
     let description = render(&template, &ctx);

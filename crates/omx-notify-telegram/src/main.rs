@@ -57,8 +57,8 @@ async fn send_telegram_notification(event: &HookEvent) -> (bool, String, String)
     let reply_to = std::env::var("OMX_TELEGRAM_REPLY_TO")
         .ok()
         .and_then(|v| v.parse::<i64>().ok());
-    let template = std::env::var("OMX_TELEGRAM_TEMPLATE")
-        .unwrap_or_else(|_| DEFAULT_TEMPLATE.to_string());
+    let template =
+        std::env::var("OMX_TELEGRAM_TEMPLATE").unwrap_or_else(|_| DEFAULT_TEMPLATE.to_string());
 
     let ctx = TemplateContext::from_event(event);
     let body = render(&template, &ctx);
@@ -103,10 +103,10 @@ async fn send_telegram_notification(event: &HookEvent) -> (bool, String, String)
     });
 
     if let Some(reply_id) = reply_to {
-        payload
-            .as_object_mut()
-            .unwrap()
-            .insert("reply_to_message_id".to_string(), serde_json::json!(reply_id));
+        payload.as_object_mut().unwrap().insert(
+            "reply_to_message_id".to_string(),
+            serde_json::json!(reply_id),
+        );
     }
 
     match client.post(&url).json(&payload).send().await {

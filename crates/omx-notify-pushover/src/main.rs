@@ -40,13 +40,19 @@ async fn send_pushover_notification(event: &HookEvent) -> (bool, String, String)
 
     let app_token = match std::env::var("OMX_PUSHOVER_APP_TOKEN") {
         Ok(token) => token,
-        Err(_) => return (false, String::new(), "OMX_PUSHOVER_APP_TOKEN not set".into()),
+        Err(_) => {
+            return (
+                false,
+                String::new(),
+                "OMX_PUSHOVER_APP_TOKEN not set".into(),
+            )
+        }
     };
 
     let device = std::env::var("OMX_PUSHOVER_DEVICE").ok();
 
-    let template = std::env::var("OMX_PUSHOVER_TEMPLATE")
-        .unwrap_or_else(|_| DEFAULT_TEMPLATE.to_string());
+    let template =
+        std::env::var("OMX_PUSHOVER_TEMPLATE").unwrap_or_else(|_| DEFAULT_TEMPLATE.to_string());
 
     let ctx = TemplateContext::from_event(event);
     let message = render(&template, &ctx);
@@ -84,7 +90,11 @@ async fn send_pushover_notification(event: &HookEvent) -> (bool, String, String)
                 )
             }
         }
-        Err(e) => (false, String::new(), format!("Pushover request failed: {e}")),
+        Err(e) => (
+            false,
+            String::new(),
+            format!("Pushover request failed: {e}"),
+        ),
     }
 }
 
